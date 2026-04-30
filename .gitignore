@@ -1,16 +1,18 @@
 # Environment / secrets
 .env
+backend/.env
 
 # SQLite database
-data/
+backend/data/
 
 # Node
 node_modules/
+backend/node_modules/
+frontend/node_modules/
 npm-debug.log*
 
 # Vite build output
 frontend/dist/
-frontend/node_modules/
 
 # OS
 .DS_Store

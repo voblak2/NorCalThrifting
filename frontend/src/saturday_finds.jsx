@@ -124,15 +124,6 @@ export default function SaturdayFinds() {
   const [usingFallback, setUsingFallback] = useState(false);
   const [showSubmit, setShowSubmit] = useState(false);
 
-  // Fonts
-  useEffect(() => {
-    const link = document.createElement("link");
-    link.href = "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,800;1,9..144,400;1,9..144,600&family=Nunito:wght@400;500;600;700&display=swap";
-    link.rel = "stylesheet";
-    document.head.appendChild(link);
-    return () => { try { document.head.removeChild(link); } catch (e) {} };
-  }, []);
-
   // Debounced API fetch — refetches whenever search params change.
   // If the API isn't reachable, falls back to the bundled SAMPLE_SALES.
   const debounceRef = useRef(null);

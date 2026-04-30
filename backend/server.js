@@ -17,6 +17,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import cron from 'node-cron';
 import { searchSales, getSaleById, upsertSale, countSales } from './db.js';
 import { geocode } from './geocode.js';
@@ -28,6 +29,7 @@ const PORT = parseInt(process.env.PORT) || 3001;
 // ---------- Middleware ----------
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '*').split(',').map(s => s.trim());
+app.use(compression());
 app.use(cors({
   origin: allowedOrigins.includes('*') ? true : allowedOrigins,
 }));
@@ -59,6 +61,7 @@ app.get('/api/sales', (req, res) => {
       to:    req.query.to,
       limit: req.query.limit,
     });
+    res.set('Cache-Control', 'public, max-age=300');
     res.json({ count: sales.length, sales });
   } catch (err) {
     console.error('[api] /sales error:', err);
@@ -69,6 +72,7 @@ app.get('/api/sales', (req, res) => {
 app.get('/api/sales/:id', (req, res) => {
   const sale = getSaleById(parseInt(req.params.id));
   if (!sale) return res.status(404).json({ error: 'not_found' });
+  res.set('Cache-Control', 'public, max-age=300');
   res.json({ sale });
 });
 
