@@ -1,0 +1,26 @@
+{
+  "name": "saturday-finds-backend",
+  "version": "0.1.0",
+  "description": "Backend API for Saturday Finds — aggregates garage sale listings from public sources",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "refresh": "node refresh.js",
+    "seed": "node seed.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "node-cron": "^3.0.3",
+    "rss-parser": "^3.13.0",
+    "sql.js": "^1.14.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
