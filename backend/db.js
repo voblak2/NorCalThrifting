@@ -154,7 +154,7 @@ export function searchSales(opts = {}) {
     params[':zip'] = opts.zip;
   }
   if (opts.q) {
-    where.push(`(LOWER(title) LIKE :q OR LOWER(description) LIKE :q OR LOWER(categories) LIKE :q OR LOWER(city) LIKE :q)`);
+    where.push(`(LOWER(title) LIKE :q OR LOWER(description) LIKE :q OR LOWER(categories) LIKE :q OR LOWER(city) LIKE :q OR zip LIKE :q)`);
     params[':q'] = `%${opts.q.toLowerCase()}%`;
   }
   if (opts.from) {
