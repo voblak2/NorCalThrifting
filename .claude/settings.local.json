@@ -21,7 +21,9 @@
       "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" add backend/)",
       "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" rm --cached server.js db.js parser.js geocode.js refresh.js seed.js \"scrapers/craigslist.js\" \"scrapers/estatesales.js\" .env.example package.json package-lock.json 2>&1)",
       "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" add .gitignore frontend/index.html frontend/src/saturday_finds.jsx backend/server.js backend/package.json backend/package-lock.json)",
-      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" push origin main 2>&1)"
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" push origin main 2>&1)",
+      "PowerShell(\\(Invoke-RestMethod \"http://localhost:3001/api/sales?q=95825\"\\) | ConvertTo-Json -Depth 1)",
+      "PowerShell(\\(Invoke-RestMethod \"http://localhost:3001/api/sales?limit=3\"\\) | ConvertTo-Json -Depth 2)"
     ]
   }
 }
