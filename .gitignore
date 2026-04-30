@@ -1,0 +1,17 @@
+# Environment / secrets
+.env
+
+# SQLite database
+data/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Vite build output
+frontend/dist/
+frontend/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
