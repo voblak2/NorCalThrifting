@@ -4,7 +4,24 @@
       "Bash(npm install *)",
       "Bash(npm run *)",
       "Bash(gh auth *)",
-      "PowerShell(gh auth status 2>&1)"
+      "PowerShell(gh auth status 2>&1)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" mv server.js backend/server.js)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" mv db.js backend/db.js)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" mv parser.js backend/parser.js)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" mv geocode.js backend/geocode.js)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" mv refresh.js backend/refresh.js)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" mv seed.js backend/seed.js)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" mv scrapers backend/scrapers)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" mv .env.example backend/.env.example)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" mv package.json backend/package.json)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" mv package-lock.json backend/package-lock.json)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" status --short)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" status)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" ls-files --error-unmatch server.js 2>&1)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" add backend/)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" rm --cached server.js db.js parser.js geocode.js refresh.js seed.js \"scrapers/craigslist.js\" \"scrapers/estatesales.js\" .env.example package.json package-lock.json 2>&1)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" add .gitignore frontend/index.html frontend/src/saturday_finds.jsx backend/server.js backend/package.json backend/package-lock.json)",
+      "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" push origin main 2>&1)"
     ]
   }
 }
