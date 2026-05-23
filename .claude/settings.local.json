@@ -23,7 +23,17 @@
       "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" add .gitignore frontend/index.html frontend/src/saturday_finds.jsx backend/server.js backend/package.json backend/package-lock.json)",
       "PowerShell(git -C \"C:\\\\Users\\\\Vince\\\\GarageSaleFinder\" push origin main 2>&1)",
       "PowerShell(\\(Invoke-RestMethod \"http://localhost:3001/api/sales?q=95825\"\\) | ConvertTo-Json -Depth 1)",
-      "PowerShell(\\(Invoke-RestMethod \"http://localhost:3001/api/sales?limit=3\"\\) | ConvertTo-Json -Depth 2)"
+      "PowerShell(\\(Invoke-RestMethod \"http://localhost:3001/api/sales?limit=3\"\\) | ConvertTo-Json -Depth 2)",
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "PowerShell($tmp = \"$env:TEMP\\\\ncron-check\"; New-Item -ItemType Directory -Force $tmp | Out-Null; Set-Location $tmp; npm pack node-cron@4.2.1 2>$null; tar -xf node-cron-4.2.1.tgz; Select-String -Path \"package\\\\dist\\\\esm\\\\node-cron.js\" -Pattern \"validate|schedule\" | Select-Object -First 15)",
+      "Bash(git -C \"C:/Projects/GarageSaleFinder\" add backend/package.json backend/package-lock.json)",
+      "Bash(git -C C:/Projects/GarageSaleFinder commit -m ' *)",
+      "Bash(git -C \"C:/Projects/GarageSaleFinder\" push origin main)",
+      "Bash(gh api *)"
     ]
   }
 }
