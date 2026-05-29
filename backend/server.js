@@ -1,4 +1,4 @@
-// server.js — Express API for Saturday Finds.
+// server.js — Express API for NorCal Thrifting.
 //
 // Routes:
 //   GET  /api/health                      — liveness check
@@ -160,7 +160,7 @@ if (cron.validate(schedule)) {
 }
 
 app.listen(PORT, () => {
-  console.log(`Saturday Finds API listening on http://localhost:${PORT}`);
+  console.log(`NorCal Thrifting API listening on http://localhost:${PORT}`);
   console.log(`  health:  GET  http://localhost:${PORT}/api/health`);
   console.log(`  search:  GET  http://localhost:${PORT}/api/sales?city=Sacramento`);
   console.log(`  submit:  POST http://localhost:${PORT}/api/sales`);

@@ -112,7 +112,7 @@ function buildMapUrl(sale) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(parts.join(', '))}`;
 }
 
-export default function SaturdayFinds() {
+export default function NorCalThrifting() {
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState("All");
   const [showFilters, setShowFilters] = useState(false);
@@ -223,10 +223,10 @@ export default function SaturdayFinds() {
           fontWeight: 600, fontStyle: "italic", margin: "0 0 12px",
           letterSpacing: "-0.02em", color: "#2C1F17", lineHeight: 1,
         }}>
-          Saturday Finds
+          NorCal Thrifting
         </h1>
         <p style={{ fontSize: "17px", color: "#6B5444", maxWidth: "560px", margin: "0 auto", lineHeight: 1.5 }}>
-          Your friendly neighborhood guide to garage sales, estate sales, and curbside treasures across the country.
+          Your NorCal guide to garage sales, estate sales, thrift stores, and curbside treasures.
         </p>
       </header>
 

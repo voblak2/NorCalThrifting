@@ -1,7 +1,7 @@
 {
-  "name": "saturday-finds-backend",
+  "name": "norcal-thrifting-backend",
   "version": "0.1.0",
-  "description": "Backend API for Saturday Finds — aggregates garage sale listings from public sources",
+  "description": "Backend API for NorCal Thrifting — aggregates garage sale and thrift listings from public sources",
   "main": "server.js",
   "type": "module",
   "scripts": {

@@ -1,9 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import SaturdayFinds from './saturday_finds.jsx';
+import NorCalThrifting from './norcal_thrifting.jsx';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <SaturdayFinds />
+    <NorCalThrifting />
   </React.StrictMode>
 );
