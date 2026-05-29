@@ -1,16 +1,16 @@
-# Saturday Finds
+# NorCal Thrifting
 
-A full-stack web app that aggregates garage sale and estate sale listings from public sources across the country, with a warm, editorial UI for searching and saving the ones worth visiting.
+A full-stack web app that aggregates garage sales, estate sales, thrift stores, flea markets, swap meets, and other secondhand finds across Sacramento, the Central Valley, and Northern California — with a warm, editorial UI for searching and saving the ones worth visiting.
 
-![Saturday Finds](https://img.shields.io/badge/stack-React%20%2B%20Node.js-A8542C?style=flat-square) ![SQLite](https://img.shields.io/badge/database-SQLite%20(sql.js)-6B5444?style=flat-square) ![License](https://img.shields.io/badge/license-MIT-7A8B6F?style=flat-square)
+![NorCal Thrifting](https://img.shields.io/badge/stack-React%20%2B%20Node.js-A8542C?style=flat-square) ![SQLite](https://img.shields.io/badge/database-SQLite%20(sql.js)-6B5444?style=flat-square) ![License](https://img.shields.io/badge/license-MIT-7A8B6F?style=flat-square)
 
 ---
 
 ## What it does
 
 **Backend**
-- Scrapes Craigslist RSS feeds (`gms` category) across 20 major U.S. cities
-- Scrapes EstateSales.net for structured estate sale listings
+- Scrapes Craigslist RSS feeds (`gms` category) for NorCal cities (Sacramento, Stockton, Fresno, Chico, Bakersfield)
+- Scrapes EstateSales.net for structured estate sale listings in CA cities
 - Parses free-text listing bodies to extract dates, times, ZIP codes, and categories
 - Geocodes every sale to lat/lng using the free U.S. Census Geocoder
 - Stores everything in SQLite — no external database required
@@ -25,7 +25,21 @@ A full-stack web app that aggregates garage sale and estate sale listings from p
 - Save/heart listings for a personal shortlist
 - "Add a Sale" modal to submit community listings directly to the database
 - Opens any listing in Google Maps with one click
-- Gracefully falls back to 16 bundled sample listings if the backend is unreachable
+- Gracefully falls back to bundled sample listings if the backend is unreachable
+
+---
+
+## Scope
+
+NorCal Thrifting is intentionally local. The competitive advantage over national aggregators like gsalr.com is community and geography — a Sacramento-branded site with real NorCal coverage is more useful and more defensible than another national scraper.
+
+Current and planned sources:
+- **Garage sales** — Craigslist RSS (live)
+- **Estate sales** — EstateSales.net HTML scraper (live)
+- **Thrift stores** — directory listings (planned)
+- **Flea markets & swap meets** — directory listings (planned)
+- **Church, library & community sales** — community submissions (planned)
+- **Find of the Day** — user-posted photos of great finds (planned)
 
 ---
 
@@ -40,31 +54,33 @@ A full-stack web app that aggregates garage sale and estate sale listings from p
 | Geocoding | U.S. Census Geocoder (free, no API key required) |
 | Scheduling | node-cron |
 
+All data sources and hosting targets are free. No paid APIs in use.
+
 ---
 
 ## Project structure
 
 ```
-GarageSaleFinder/
+NorCalThrifting/
 ├── backend/
 │   ├── server.js             → Express app, routes, cron scheduling
 │   ├── db.js                 → SQLite schema & query helpers
 │   ├── parser.js             → Free-text → structured data (date, time, ZIP, categories)
 │   ├── geocode.js            → U.S. Census geocoder client
 │   ├── refresh.js            → Runs all scrapers once
-│   ├── seed.js               → Inserts 16 sample listings
+│   ├── seed.js               → Inserts sample listings
 │   ├── .env.example          → Copy to .env and configure
 │   ├── data/
 │   │   └── sales.db          → SQLite database (gitignored)
 │   └── scrapers/
-│       ├── craigslist.js     → RSS feeds across 20 cities
-│       └── estatesales.js    → HTML scraping
+│       ├── craigslist.js     → RSS feeds for NorCal cities
+│       └── estatesales.js    → HTML scraping for CA cities
 └── frontend/
     ├── index.html
     ├── vite.config.js        → Dev proxy: /api → localhost:3001
     └── src/
         ├── main.jsx
-        └── saturday_finds.jsx → Single-file React app
+        └── norcal_thrifting.jsx → Single-file React app
 ```
 
 ---
@@ -79,14 +95,14 @@ GarageSaleFinder/
 
 ```powershell
 # 1. Install backend dependencies
-cd C:\Projects\GarageSaleFinder\backend
+cd C:\Projects\NorCalThrifting\backend
 npm install
 
 # 2. Create the environment file
 Copy-Item .env.example .env
 
 # 3. Install frontend dependencies
-cd C:\Projects\GarageSaleFinder\frontend
+cd C:\Projects\NorCalThrifting\frontend
 npm install
 ```
 
@@ -98,7 +114,7 @@ Open **two terminal windows** and run one command in each:
 
 **Terminal 1 — Backend:**
 ```powershell
-cd C:\Projects\GarageSaleFinder\backend
+cd C:\Projects\NorCalThrifting\backend
 npm run dev
 ```
 
@@ -106,7 +122,7 @@ The API starts on `http://localhost:3001`. On startup it prints how many sales a
 
 **Terminal 2 — Frontend:**
 ```powershell
-cd C:\Projects\GarageSaleFinder\frontend
+cd C:\Projects\NorCalThrifting\frontend
 npm run dev
 ```
 
@@ -119,8 +135,8 @@ Then open **`http://localhost:5173`** in your browser.
 The database starts empty on a fresh clone. You have two options:
 
 ```powershell
-# Option A — load 16 sample listings instantly
-cd C:\Projects\GarageSaleFinder\backend
+# Option A — load sample listings instantly
+cd C:\Projects\NorCalThrifting\backend
 npm run seed
 
 # Option B — scrape live listings from Craigslist + EstateSales.net
@@ -133,13 +149,13 @@ Since `node_modules`, `.env`, and the database all stay on your local machine an
 
 **Terminal 1:**
 ```powershell
-cd C:\Projects\GarageSaleFinder\backend
+cd C:\Projects\NorCalThrifting\backend
 npm run dev
 ```
 
 **Terminal 2:**
 ```powershell
-cd C:\Projects\GarageSaleFinder\frontend
+cd C:\Projects\NorCalThrifting\frontend
 npm run dev
 ```
 
