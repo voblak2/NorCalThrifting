@@ -37,7 +37,8 @@
       "PowerShell(Get-ChildItem \"c:\\\\Projects\\\\GarageSaleFinder\\\\frontend\\\\src\" -Recurse | Where-Object { !$_.PSIsContainer } | Select-Object FullName)",
       "Bash(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\Vince\\\\.claude\\\\projects\\\\c--Projects-NorCalThrifting\\\\memory\")",
       "Bash(Out-Null)",
-      "Bash(Copy-Item \"C:\\\\Users\\\\Vince\\\\.claude\\\\projects\\\\c--Projects-GarageSaleFinder\\\\memory\\\\*\" \"C:\\\\Users\\\\Vince\\\\.claude\\\\projects\\\\c--Projects-NorCalThrifting\\\\memory\\\\\" -Recurse)"
+      "Bash(Copy-Item \"C:\\\\Users\\\\Vince\\\\.claude\\\\projects\\\\c--Projects-GarageSaleFinder\\\\memory\\\\*\" \"C:\\\\Users\\\\Vince\\\\.claude\\\\projects\\\\c--Projects-NorCalThrifting\\\\memory\\\\\" -Recurse)",
+      "Bash(git remote *)"
     ]
   }
 }
