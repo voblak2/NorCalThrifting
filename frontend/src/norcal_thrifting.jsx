@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Search, MapPin, Calendar, Clock, Tag, ExternalLink, X, Sparkles,
   Heart, Filter, Plus, Loader2, AlertCircle, Shield, LogOut, User,
-  ChevronRight, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap, Camera,
+  ChevronRight, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap, Camera, ShoppingBag,
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -493,22 +493,26 @@ export default function NorCalThrifting() {
       <div style={{ position: "relative", zIndex: 1, maxWidth: "1100px", margin: "12px auto 0", padding: "0 24px" }}>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           {[
-            { label: 'This Weekend', icon: <Calendar size={14} />, active: weekendActive, onClick: toggleWeekend },
-            { label: 'Open Now',     icon: <Zap size={14} />,      active: openNow,      onClick: () => setOpenNow(v => !v) },
-            { label: 'Estate Sales', icon: <Home size={14} />,     active: saleType === 'estate_sale', onClick: () => setSaleType(v => v === 'estate_sale' ? '' : 'estate_sale') },
-          ].map(chip => (
-            <button key={chip.label} onClick={chip.onClick} style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '6px 14px', borderRadius: '999px',
-              background: chip.active ? '#A8542C' : '#FFFCF6',
-              color: chip.active ? '#FFFCF6' : '#6B5444',
-              border: `1px solid ${chip.active ? '#A8542C' : '#E8DCC8'}`,
-              fontSize: '13px', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
-              transition: 'all 0.15s',
-            }}>
-              {chip.icon} {chip.label}
-            </button>
-          ))}
+            { label: 'This Weekend',  icon: <Calendar size={14} />,     active: weekendActive,                  onClick: toggleWeekend },
+            { label: 'Open Now',      icon: <Zap size={14} />,          active: openNow,                         onClick: () => setOpenNow(v => !v) },
+            { label: 'Estate Sales',  icon: <Home size={14} />,         active: saleType === 'estate_sale',      onClick: () => setSaleType(v => v === 'estate_sale'   ? '' : 'estate_sale') },
+            { label: 'Thrift Stores', icon: <ShoppingBag size={14} />,  active: saleType === 'thrift_store',     onClick: () => setSaleType(v => v === 'thrift_store'  ? '' : 'thrift_store'), teal: true },
+          ].map(chip => {
+            const activeColor = chip.teal ? '#3A8A6E' : '#A8542C';
+            return (
+              <button key={chip.label} onClick={chip.onClick} style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '6px 14px', borderRadius: '999px',
+                background: chip.active ? activeColor : '#FFFCF6',
+                color: chip.active ? '#FFFCF6' : '#6B5444',
+                border: `1px solid ${chip.active ? activeColor : '#E8DCC8'}`,
+                fontSize: '13px', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}>
+                {chip.icon} {chip.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -624,15 +628,24 @@ export default function NorCalThrifting() {
                   {sale.city}, {sale.state} {sale.zip}
                 </span>
               </div>
-              <div style={infoRowStyle}>
-                <Calendar size={16} color="#A8542C" style={{ flexShrink: 0 }} />
-                <span>{formatDate(sale.sale_date)}</span>
-              </div>
-              {(sale.start_time || sale.end_time) && (
+              {sale.sale_type === 'thrift_store' ? (
                 <div style={infoRowStyle}>
-                  <Clock size={16} color="#A8542C" style={{ flexShrink: 0 }} />
-                  <span>{[formatTime(sale.start_time), formatTime(sale.end_time)].filter(Boolean).join(' – ')}</span>
+                  <ShoppingBag size={16} color="#3A8A6E" style={{ flexShrink: 0 }} />
+                  <span style={{ color: '#3A8A6E', fontWeight: 600 }}>Thrift Store · Permanent Location</span>
                 </div>
+              ) : (
+                <>
+                  <div style={infoRowStyle}>
+                    <Calendar size={16} color="#A8542C" style={{ flexShrink: 0 }} />
+                    <span>{formatDate(sale.sale_date)}</span>
+                  </div>
+                  {(sale.start_time || sale.end_time) && (
+                    <div style={infoRowStyle}>
+                      <Clock size={16} color="#A8542C" style={{ flexShrink: 0 }} />
+                      <span>{[formatTime(sale.start_time), formatTime(sale.end_time)].filter(Boolean).join(' – ')}</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -702,15 +715,22 @@ export default function NorCalThrifting() {
 
 const SACRAMENTO = [38.5816, -121.4944];
 
-const markerIcon = new L.Icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-});
+function makePin(fill) {
+  return L.divIcon({
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="36" viewBox="0 0 26 36">
+      <path d="M13 0C5.82 0 0 5.82 0 13c0 9.1 13 23 13 23S26 22.1 26 13C26 5.82 20.18 0 13 0z" fill="${fill}" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>
+      <circle cx="13" cy="13" r="5.5" fill="rgba(255,255,255,0.9)"/>
+    </svg>`,
+    iconSize: [26, 36],
+    iconAnchor: [13, 36],
+    popupAnchor: [0, -38],
+    className: '',
+  });
+}
+
+// Orange-brown for sales, teal-green for thrift stores
+const saleIcon    = makePin('#A8542C');
+const thriftIcon  = makePin('#3A8A6E');
 
 function FitBounds({ markers }) {
   const map = useMap();
@@ -719,7 +739,6 @@ function FitBounds({ markers }) {
     if (markers.length > 0) {
       map.fitBounds(markers, { padding: [40, 40], maxZoom: 13 });
     }
-    // key is a stable string derived from marker positions — only re-runs when data changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   return null;
@@ -729,9 +748,25 @@ function MapView({ sales }) {
   const geocoded = sales.filter(s => s.lat != null && s.lng != null);
   const markerPositions = geocoded.map(s => [s.lat, s.lng]);
   const unmapped = sales.length - geocoded.length;
+  const thriftCount = geocoded.filter(s => s.sale_type === 'thrift_store').length;
+  const saleCount   = geocoded.length - thriftCount;
 
   return (
     <div style={{ position: 'relative', zIndex: 1, maxWidth: '1100px', margin: '0 auto', padding: '0 24px' }}>
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: '16px', marginBottom: '8px', justifyContent: 'flex-end' }}>
+        {saleCount > 0 && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#6B5444', fontWeight: 600 }}>
+            <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#A8542C' }} /> Sales
+          </span>
+        )}
+        {thriftCount > 0 && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#6B5444', fontWeight: 600 }}>
+            <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#3A8A6E' }} /> Thrift Stores
+          </span>
+        )}
+      </div>
+
       <div style={{ borderRadius: '18px', overflow: 'hidden', border: '1px solid #E8DCC8', boxShadow: '0 2px 12px rgba(61,46,38,0.05)' }}>
         <MapContainer
           center={SACRAMENTO}
@@ -744,43 +779,54 @@ function MapView({ sales }) {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           />
           {markerPositions.length > 0 && <FitBounds markers={markerPositions} />}
-          {geocoded.map(sale => (
-            <Marker key={sale.id} position={[sale.lat, sale.lng]} icon={markerIcon}>
-              <Popup maxWidth={260}>
-                <div style={{ fontFamily: "'Nunito', system-ui, sans-serif", padding: '2px 0' }}>
-                  <p style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: '15px', margin: '0 0 6px', color: '#2C1F17', lineHeight: 1.2 }}>
-                    {sale.title}
-                  </p>
-                  <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#6B5444' }}>
-                    {sale.city}, {sale.state} · {formatDate(sale.sale_date)}
-                  </p>
-                  {(sale.start_time || sale.end_time) && (
-                    <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#9A8472' }}>
-                      {[formatTime(sale.start_time), formatTime(sale.end_time)].filter(Boolean).join(' – ')}
+          {geocoded.map(sale => {
+            const isThrift = sale.sale_type === 'thrift_store';
+            return (
+              <Marker key={sale.id} position={[sale.lat, sale.lng]} icon={isThrift ? thriftIcon : saleIcon}>
+                <Popup maxWidth={260}>
+                  <div style={{ fontFamily: "'Nunito', system-ui, sans-serif", padding: '2px 0' }}>
+                    <p style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: '15px', margin: '0 0 6px', color: '#2C1F17', lineHeight: 1.2 }}>
+                      {sale.title}
                     </p>
-                  )}
-                  <a
-                    href={buildMapUrl(sale)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '5px',
-                      padding: '6px 12px', borderRadius: '8px',
-                      background: '#A8542C', color: '#FFFCF6',
-                      textDecoration: 'none', fontSize: '12px', fontWeight: 700,
-                    }}
-                  >
-                    <MapPin size={12} /> Open in Maps
-                  </a>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+                    {isThrift ? (
+                      <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#6B5444' }}>
+                        {sale.address}<br />{sale.city}, {sale.state} {sale.zip}
+                      </p>
+                    ) : (
+                      <>
+                        <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#6B5444' }}>
+                          {sale.city}, {sale.state} · {formatDate(sale.sale_date)}
+                        </p>
+                        {(sale.start_time || sale.end_time) && (
+                          <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#9A8472' }}>
+                            {[formatTime(sale.start_time), formatTime(sale.end_time)].filter(Boolean).join(' – ')}
+                          </p>
+                        )}
+                      </>
+                    )}
+                    <a
+                      href={buildMapUrl(sale)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '5px',
+                        padding: '6px 12px', borderRadius: '8px',
+                        background: isThrift ? '#3A8A6E' : '#A8542C', color: '#FFFCF6',
+                        textDecoration: 'none', fontSize: '12px', fontWeight: 700,
+                      }}
+                    >
+                      <MapPin size={12} /> Open in Maps
+                    </a>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
         </MapContainer>
       </div>
       {unmapped > 0 && (
         <p style={{ margin: '10px 0 0', fontSize: '13px', color: '#9A8472', textAlign: 'right' }}>
-          {unmapped} {unmapped === 1 ? 'sale' : 'sales'} not shown — no coordinates available
+          {unmapped} {unmapped === 1 ? 'listing' : 'listings'} not shown — no coordinates available
         </p>
       )}
     </div>
