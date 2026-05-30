@@ -25,6 +25,7 @@ import { requireAuth } from './auth.js';
 import authRoutes from './routes/auth.js';
 import favoritesRoutes from './routes/favorites.js';
 import adminRoutes from './routes/admin.js';
+import uploadsRoutes from './routes/uploads.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT) || 3001;
@@ -39,6 +40,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '64kb' }));
 app.use(cookieParser());
+app.use('/uploads', express.static('uploads'));
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -53,6 +55,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/favorites', favoritesRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api', uploadsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, sales: countSales(), now: new Date().toISOString() });
@@ -126,8 +129,9 @@ app.post('/api/sales', requireAuth, async (req, res) => {
       start_time: body.start_time || null,
       end_time: body.end_time || null,
       categories: Array.isArray(body.categories) ? body.categories.slice(0, 6) : [],
-      sale_type: body.sale_type || 'garage_sale',
-      posted_by: req.user.id,
+      sale_type:  body.sale_type || 'garage_sale',
+      photo_urls: Array.isArray(body.photo_urls) ? body.photo_urls.slice(0, 5) : [],
+      posted_by:  req.user.id,
       expires_at: expires,
     });
 

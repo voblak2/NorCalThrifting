@@ -5,6 +5,9 @@ backend/.env
 # SQLite database
 backend/data/
 
+# User-uploaded photos
+backend/uploads/
+
 # Node
 node_modules/
 backend/node_modules/

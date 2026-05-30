@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Search, MapPin, Calendar, Clock, Tag, ExternalLink, X, Sparkles,
   Heart, Filter, Plus, Loader2, AlertCircle, Shield, LogOut, User,
-  ChevronRight, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap,
+  ChevronRight, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap, Camera,
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -574,15 +574,33 @@ export default function NorCalThrifting() {
         {filtered.map(sale => (
           <article key={sale.id} style={{
             background: "#FFFCF6", border: "1px solid #E8DCC8", borderRadius: "18px", padding: "22px",
-            display: "flex", flexDirection: "column",
+            display: "flex", flexDirection: "column", overflow: "hidden",
             boxShadow: "0 2px 12px rgba(61, 46, 38, 0.05)",
             transition: "transform 0.2s, box-shadow 0.2s", position: "relative",
           }}
           onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(61, 46, 38, 0.1)"; }}
           onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 12px rgba(61, 46, 38, 0.05)"; }}>
+
+            {sale.photo_urls && sale.photo_urls.length > 0 && (
+              <div style={{ margin: "-22px -22px 16px", height: "200px", position: "relative", flexShrink: 0 }}>
+                <img src={sale.photo_urls[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                {sale.photo_urls.length > 1 && (
+                  <span style={{
+                    position: "absolute", bottom: "8px", right: "8px",
+                    background: "rgba(44,31,23,0.65)", color: "#FFFCF6",
+                    fontSize: "11px", fontWeight: 700, padding: "3px 9px", borderRadius: "999px",
+                  }}>
+                    +{sale.photo_urls.length - 1} more
+                  </span>
+                )}
+              </div>
+            )}
+
             <button onClick={() => toggleFave(sale.id)} aria-label="Save sale" style={{
-              position: "absolute", top: "16px", right: "16px",
-              background: "none", border: "none", cursor: "pointer", padding: "4px",
+              position: "absolute", top: "16px", right: "16px", zIndex: 1,
+              background: sale.photo_urls?.length > 0 ? "rgba(255,252,246,0.75)" : "none",
+              backdropFilter: sale.photo_urls?.length > 0 ? "blur(4px)" : "none",
+              border: "none", cursor: "pointer", padding: "4px", borderRadius: "50%",
               color: favorites.has(sale.id) ? "#C66B3D" : "#C9B89E",
               transition: "color 0.2s, transform 0.2s",
             }}
@@ -893,16 +911,49 @@ function SubmitModal({ onClose, onSuccess }) {
     sale_date: '', start_time: '08:00', end_time: '14:00',
     description: '', categories: '',
   });
+  const [photoFiles, setPhotoFiles]       = useState([]);
+  const [photoPreviews, setPhotoPreviews] = useState([]);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
-  const [done, setDone] = useState(false);
+  const [uploadStep, setUploadStep] = useState(false);
+  const [error, setError]           = useState(null);
+  const [done, setDone]             = useState(false);
 
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handlePhotoChange = (e) => {
+    const files = Array.from(e.target.files || []).slice(0, 5);
+    photoPreviews.forEach(u => URL.revokeObjectURL(u));
+    setPhotoFiles(files);
+    setPhotoPreviews(files.map(f => URL.createObjectURL(f)));
+  };
+
+  const removePhoto = (idx) => {
+    URL.revokeObjectURL(photoPreviews[idx]);
+    setPhotoFiles(prev => prev.filter((_, i) => i !== idx));
+    setPhotoPreviews(prev => prev.filter((_, i) => i !== idx));
+  };
 
   const submit = async () => {
     setError(null);
     setSubmitting(true);
     try {
+      let photo_urls = [];
+      if (photoFiles.length > 0) {
+        setUploadStep(true);
+        const fd = new FormData();
+        photoFiles.forEach(f => fd.append('photos', f));
+        const upRes = await fetch(`${API_URL}/uploads`, {
+          method: 'POST', credentials: 'include', body: fd,
+        });
+        if (!upRes.ok) {
+          const err = await upRes.json().catch(() => ({}));
+          throw new Error(err.error || 'photo_upload_failed');
+        }
+        const upData = await upRes.json();
+        photo_urls = upData.urls || [];
+        setUploadStep(false);
+      }
+
       const res = await fetch(`${API_URL}/sales`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -910,6 +961,7 @@ function SubmitModal({ onClose, onSuccess }) {
         body: JSON.stringify({
           ...form,
           categories: form.categories.split(',').map(s => s.trim()).filter(Boolean),
+          photo_urls,
         }),
       });
       if (!res.ok) {
@@ -920,6 +972,7 @@ function SubmitModal({ onClose, onSuccess }) {
       setTimeout(() => { onSuccess?.(); onClose(); }, 1200);
     } catch (err) {
       setError(err.message);
+      setUploadStep(false);
     } finally {
       setSubmitting(false);
     }
@@ -969,6 +1022,40 @@ function SubmitModal({ onClose, onSuccess }) {
             <Field label="Description" value={form.description} onChange={v => update('description', v)} multiline placeholder="What's for sale, special details..." />
             <Field label="Categories (comma-separated)" value={form.categories} onChange={v => update('categories', v)} placeholder="Furniture, Vintage, Tools" />
 
+            {/* Photo upload */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#6B5444" }}>
+                Photos <span style={{ fontWeight: 400, color: "#9A8472" }}>(optional · up to 5)</span>
+              </span>
+              <label style={{
+                display: "flex", alignItems: "center", gap: "8px",
+                padding: "10px 14px", borderRadius: "10px",
+                border: "1px dashed #C9B89E", background: "#FBF5EC",
+                cursor: "pointer", fontSize: "14px", color: "#9A8472", fontFamily: "inherit",
+              }}>
+                <Camera size={16} />
+                <span>{photoFiles.length > 0 ? `${photoFiles.length} photo${photoFiles.length > 1 ? 's' : ''} selected — click to change` : 'Choose photos…'}</span>
+                <input type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handlePhotoChange} />
+              </label>
+              {photoPreviews.length > 0 && (
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {photoPreviews.map((url, i) => (
+                    <div key={i} style={{ position: "relative" }}>
+                      <img src={url} alt="" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: "8px", border: "1px solid #E8DCC8" }} />
+                      <button onClick={() => removePhoto(i)} style={{
+                        position: "absolute", top: "-6px", right: "-6px",
+                        width: "20px", height: "20px", borderRadius: "50%",
+                        background: "#A8542C", color: "#FFFCF6", border: "none",
+                        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+                      }}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {error && (
               <div style={{ padding: "10px 14px", borderRadius: "8px", background: "rgba(198, 107, 61, 0.1)", color: "#A8542C", fontSize: "13px" }}>
                 {error}
@@ -983,7 +1070,7 @@ function SubmitModal({ onClose, onSuccess }) {
               display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
             }}>
               {submitting && <Loader2 size={16} className="spin" />}
-              {submitting ? 'Posting…' : 'Post Sale'}
+              {uploadStep ? 'Uploading photos…' : submitting ? 'Posting…' : 'Post Sale'}
             </button>
           </div>
         )}
