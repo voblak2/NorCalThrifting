@@ -210,6 +210,10 @@ export function searchSales(opts = {}) {
     where.push(`(sale_date IS NULL OR sale_date <= :to)`);
     params[':to'] = opts.to;
   }
+  if (opts.sale_type) {
+    where.push(`sale_type = :sale_type`);
+    params[':sale_type'] = opts.sale_type;
+  }
 
   const limit = Math.min(Math.max(parseInt(opts.limit) || 100, 1), 500);
   const sql = `

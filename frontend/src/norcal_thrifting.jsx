@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Search, MapPin, Calendar, Clock, Tag, ExternalLink, X, Sparkles,
   Heart, Filter, Plus, Loader2, AlertCircle, Shield, LogOut, User,
-  ChevronRight, LayoutDashboard, RefreshCw, Users, List, Map,
+  ChevronRight, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap,
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -83,6 +83,34 @@ export default function NorCalThrifting() {
   const [showAdmin, setShowAdmin]   = useState(false);
   const [viewMode, setViewMode]     = useState('cards'); // 'cards' | 'map'
 
+  // Advanced filters
+  const [dateFrom, setDateFrom]   = useState('');
+  const [dateTo, setDateTo]       = useState('');
+  const [saleType, setSaleType]   = useState('');
+  const [openNow, setOpenNow]     = useState(false);
+
+  // Weekend date range (Sat–Sun of current or next weekend)
+  const weekendDates = useMemo(() => {
+    const today = new Date();
+    const dow = today.getDay(); // 0=Sun, 6=Sat
+    const daysToSat = dow === 6 ? 0 : dow === 0 ? -1 : 6 - dow;
+    const sat = new Date(today);
+    sat.setDate(today.getDate() + daysToSat);
+    const sun = new Date(sat);
+    sun.setDate(sat.getDate() + 1);
+    return { from: sat.toISOString().slice(0, 10), to: sun.toISOString().slice(0, 10) };
+  }, []);
+
+  const weekendActive = dateFrom === weekendDates.from && dateTo === weekendDates.to;
+  const toggleWeekend = () => {
+    if (weekendActive) { setDateFrom(''); setDateTo(''); }
+    else { setDateFrom(weekendDates.from); setDateTo(weekendDates.to); }
+  };
+
+  const activeFilterCount = [
+    stateFilter !== 'All', dateFrom, dateTo, saleType, openNow,
+  ].filter(Boolean).length;
+
   // Auth state
   const [user, setUser]         = useState(null);   // null = not logged in
   const [showAuth, setShowAuth] = useState(false);
@@ -110,6 +138,9 @@ export default function NorCalThrifting() {
       const params = new URLSearchParams();
       if (query) params.set('q', query);
       if (stateFilter && stateFilter !== 'All') params.set('state', stateFilter);
+      if (dateFrom) params.set('from', dateFrom);
+      if (dateTo)   params.set('to',   dateTo);
+      if (saleType) params.set('sale_type', saleType);
       const res = await fetch(`${API_URL}/sales?${params.toString()}`, {
         credentials: 'include',
         signal: AbortSignal.timeout(4000),
@@ -124,7 +155,7 @@ export default function NorCalThrifting() {
     } finally {
       setLoading(false);
     }
-  }, [query, stateFilter]);
+  }, [query, stateFilter, dateFrom, dateTo, saleType]);
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
@@ -137,8 +168,12 @@ export default function NorCalThrifting() {
     let results = sales;
     if (usingFallback) {
       const q = query.trim().toLowerCase();
+      const todayStr = new Date().toISOString().slice(0, 10);
       results = results.filter(s => {
         if (stateFilter !== "All" && s.state !== stateFilter) return false;
+        if (saleType && s.sale_type && s.sale_type !== saleType) return false;
+        if (dateFrom && s.sale_date && s.sale_date < dateFrom) return false;
+        if (dateTo   && s.sale_date && s.sale_date > dateTo)   return false;
         if (!q) return true;
         return (
           s.city.toLowerCase().includes(q) || s.state.toLowerCase() === q ||
@@ -148,6 +183,17 @@ export default function NorCalThrifting() {
         );
       });
     }
+    if (openNow) {
+      const now = new Date();
+      const todayStr = now.toISOString().slice(0, 10);
+      const nowTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      results = results.filter(s => {
+        if (s.sale_date !== todayStr) return false;
+        const start = s.start_time || '00:00';
+        const end   = s.end_time   || '23:59';
+        return nowTime >= start && nowTime <= end;
+      });
+    }
     if (showFaves) results = results.filter(s => favorites.has(s.id));
     if (sortBy === "date") {
       results = [...results].sort((a, b) => (a.sale_date || '9999').localeCompare(b.sale_date || '9999'));
@@ -155,7 +201,7 @@ export default function NorCalThrifting() {
       results = [...results].sort((a, b) => a.city.localeCompare(b.city));
     }
     return results;
-  }, [sales, usingFallback, query, stateFilter, showFaves, favorites, sortBy]);
+  }, [sales, usingFallback, query, stateFilter, saleType, dateFrom, dateTo, openNow, showFaves, favorites, sortBy]);
 
   // ─── Favorites ────────────────────────────────────────────────────────────
   const toggleFave = async (id) => {
@@ -368,8 +414,17 @@ export default function NorCalThrifting() {
                 </button>
               )}
             </div>
-            <button onClick={() => setShowFilters(s => !s)} style={btnStyle(showFilters, "#A8542C")}>
+            <button onClick={() => setShowFilters(s => !s)} style={{ ...btnStyle(showFilters || activeFilterCount > 0, "#A8542C"), position: 'relative' }}>
               <Filter size={18} /> Filters
+              {activeFilterCount > 0 && (
+                <span style={{
+                  position: 'absolute', top: '-6px', right: '-6px',
+                  width: '18px', height: '18px', borderRadius: '50%',
+                  background: '#C66B3D', color: '#FFFCF6',
+                  fontSize: '11px', fontWeight: 700,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>{activeFilterCount}</span>
+              )}
             </button>
             <button onClick={() => setShowFaves(s => !s)} style={btnStyle(showFaves, "#7A8B6F")}>
               <Heart size={18} fill={showFaves ? "#FFFCF6" : "none"} />
@@ -395,14 +450,65 @@ export default function NorCalThrifting() {
                 </select>
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", fontWeight: 600 }}>
+                Sale type:
+                <select value={saleType} onChange={e => setSaleType(e.target.value)} style={selectStyle}>
+                  <option value="">All types</option>
+                  <option value="garage_sale">Garage sale</option>
+                  <option value="estate_sale">Estate sale</option>
+                  <option value="moving_sale">Moving sale</option>
+                  <option value="yard_sale">Yard sale</option>
+                  <option value="rummage_sale">Rummage sale</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", fontWeight: 600 }}>
+                From:
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={selectStyle} />
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", fontWeight: 600 }}>
+                To:
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={selectStyle} />
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", fontWeight: 600 }}>
                 Sort by:
                 <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={selectStyle}>
                   <option value="date">Date (soonest first)</option>
                   <option value="city">City (A–Z)</option>
                 </select>
               </label>
+              {activeFilterCount > 0 && (
+                <button
+                  onClick={() => { setStateFilter('All'); setDateFrom(''); setDateTo(''); setSaleType(''); setOpenNow(false); }}
+                  style={{ background: 'none', border: 'none', color: '#A8542C', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: 0, textDecoration: 'underline' }}
+                >
+                  Clear all filters
+                </button>
+              )}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* ─── Quick filter chips ───────────────────────────────────────────── */}
+      <div style={{ position: "relative", zIndex: 1, maxWidth: "1100px", margin: "12px auto 0", padding: "0 24px" }}>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          {[
+            { label: 'This Weekend', icon: <Calendar size={14} />, active: weekendActive, onClick: toggleWeekend },
+            { label: 'Open Now',     icon: <Zap size={14} />,      active: openNow,      onClick: () => setOpenNow(v => !v) },
+            { label: 'Estate Sales', icon: <Home size={14} />,     active: saleType === 'estate_sale', onClick: () => setSaleType(v => v === 'estate_sale' ? '' : 'estate_sale') },
+          ].map(chip => (
+            <button key={chip.label} onClick={chip.onClick} style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '6px 14px', borderRadius: '999px',
+              background: chip.active ? '#A8542C' : '#FFFCF6',
+              color: chip.active ? '#FFFCF6' : '#6B5444',
+              border: `1px solid ${chip.active ? '#A8542C' : '#E8DCC8'}`,
+              fontSize: '13px', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}>
+              {chip.icon} {chip.label}
+            </button>
+          ))}
         </div>
       </div>
 

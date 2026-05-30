@@ -61,13 +61,14 @@ app.get('/api/health', (req, res) => {
 app.get('/api/sales', (req, res) => {
   try {
     const sales = searchSales({
-      q:     req.query.q,
-      city:  req.query.city,
-      state: req.query.state,
-      zip:   req.query.zip,
-      from:  req.query.from,
-      to:    req.query.to,
-      limit: req.query.limit,
+      q:         req.query.q,
+      city:      req.query.city,
+      state:     req.query.state,
+      zip:       req.query.zip,
+      from:      req.query.from,
+      to:        req.query.to,
+      sale_type: req.query.sale_type,
+      limit:     req.query.limit,
     });
     res.set('Cache-Control', 'public, max-age=300');
     res.json({ count: sales.length, sales });
