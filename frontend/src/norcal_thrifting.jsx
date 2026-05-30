@@ -2,8 +2,10 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Search, MapPin, Calendar, Clock, Tag, ExternalLink, X, Sparkles,
   Heart, Filter, Plus, Loader2, AlertCircle, Shield, LogOut, User,
-  ChevronRight, LayoutDashboard, RefreshCw, Users, List,
+  ChevronRight, LayoutDashboard, RefreshCw, Users, List, Map,
 } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import L from 'leaflet';
 
 // ─── Backend configuration ─────────────────────────────────────────────────
 const API_URL = '/api';
@@ -79,6 +81,7 @@ export default function NorCalThrifting() {
   const [usingFallback, setUsingFallback] = useState(false);
   const [showSubmit, setShowSubmit] = useState(false);
   const [showAdmin, setShowAdmin]   = useState(false);
+  const [viewMode, setViewMode]     = useState('cards'); // 'cards' | 'map'
 
   // Auth state
   const [user, setUser]         = useState(null);   // null = not logged in
@@ -375,6 +378,9 @@ export default function NorCalThrifting() {
             <button onClick={openAddSale} style={btnStyle(false, "#A8542C", true)}>
               <Plus size={18} /> Add a Sale
             </button>
+            <button onClick={() => setViewMode(v => v === 'map' ? 'cards' : 'map')} style={btnStyle(viewMode === 'map', "#7A8B6F")}>
+              <Map size={18} /> {viewMode === 'map' ? 'Cards' : 'Map'}
+            </button>
           </div>
 
           {showFilters && (
@@ -436,7 +442,13 @@ export default function NorCalThrifting() {
         </span>
       </div>
 
+      {/* ─── Map view ─────────────────────────────────────────────────────── */}
+      {viewMode === 'map' && (
+        <MapView sales={filtered} />
+      )}
+
       {/* ─── Sale cards ───────────────────────────────────────────────────── */}
+      {viewMode === 'cards' && (
       <div style={{
         position: "relative", zIndex: 1, maxWidth: "1100px", margin: "0 auto", padding: "0 24px",
         display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "20px",
@@ -535,6 +547,7 @@ export default function NorCalThrifting() {
           </article>
         ))}
       </div>
+      )}
 
       <footer style={{ position: "relative", zIndex: 1, maxWidth: "1100px", margin: "60px auto 0", padding: "0 24px", textAlign: "center" }}>
         <p style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: "16px", color: "#9A8472", margin: 0 }}>
@@ -557,6 +570,95 @@ export default function NorCalThrifting() {
         @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
         .spin { animation: spin 1s linear infinite }
       `}</style>
+    </div>
+  );
+}
+
+// ─── Map view ───────────────────────────────────────────────────────────────
+
+const SACRAMENTO = [38.5816, -121.4944];
+
+const markerIcon = new L.Icon({
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
+function FitBounds({ markers }) {
+  const map = useMap();
+  const key = JSON.stringify(markers);
+  useEffect(() => {
+    if (markers.length > 0) {
+      map.fitBounds(markers, { padding: [40, 40], maxZoom: 13 });
+    }
+    // key is a stable string derived from marker positions — only re-runs when data changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return null;
+}
+
+function MapView({ sales }) {
+  const geocoded = sales.filter(s => s.lat != null && s.lng != null);
+  const markerPositions = geocoded.map(s => [s.lat, s.lng]);
+  const unmapped = sales.length - geocoded.length;
+
+  return (
+    <div style={{ position: 'relative', zIndex: 1, maxWidth: '1100px', margin: '0 auto', padding: '0 24px' }}>
+      <div style={{ borderRadius: '18px', overflow: 'hidden', border: '1px solid #E8DCC8', boxShadow: '0 2px 12px rgba(61,46,38,0.05)' }}>
+        <MapContainer
+          center={SACRAMENTO}
+          zoom={10}
+          style={{ height: 'clamp(400px, 60vh, 640px)', width: '100%' }}
+          scrollWheelZoom
+        >
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          />
+          {markerPositions.length > 0 && <FitBounds markers={markerPositions} />}
+          {geocoded.map(sale => (
+            <Marker key={sale.id} position={[sale.lat, sale.lng]} icon={markerIcon}>
+              <Popup maxWidth={260}>
+                <div style={{ fontFamily: "'Nunito', system-ui, sans-serif", padding: '2px 0' }}>
+                  <p style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: '15px', margin: '0 0 6px', color: '#2C1F17', lineHeight: 1.2 }}>
+                    {sale.title}
+                  </p>
+                  <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#6B5444' }}>
+                    {sale.city}, {sale.state} · {formatDate(sale.sale_date)}
+                  </p>
+                  {(sale.start_time || sale.end_time) && (
+                    <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#9A8472' }}>
+                      {[formatTime(sale.start_time), formatTime(sale.end_time)].filter(Boolean).join(' – ')}
+                    </p>
+                  )}
+                  <a
+                    href={buildMapUrl(sale)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '5px',
+                      padding: '6px 12px', borderRadius: '8px',
+                      background: '#A8542C', color: '#FFFCF6',
+                      textDecoration: 'none', fontSize: '12px', fontWeight: 700,
+                    }}
+                  >
+                    <MapPin size={12} /> Open in Maps
+                  </a>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+      </div>
+      {unmapped > 0 && (
+        <p style={{ margin: '10px 0 0', fontSize: '13px', color: '#9A8472', textAlign: 'right' }}>
+          {unmapped} {unmapped === 1 ? 'sale' : 'sales'} not shown — no coordinates available
+        </p>
+      )}
     </div>
   );
 }
