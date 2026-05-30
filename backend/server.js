@@ -4,24 +4,27 @@
 //   GET  /api/health                      — liveness check
 //   GET  /api/sales                       — search/list sales
 //   GET  /api/sales/:id                   — get one sale
-//   POST /api/sales                       — submit a new sale (user contribution)
-//   POST /api/admin/refresh               — trigger a manual scraper run
-//
-// Environment variables (see .env.example):
-//   PORT              default 3001
-//   ADMIN_TOKEN       required header value for /api/admin/* routes
-//   ALLOWED_ORIGINS   comma-separated list of CORS origins (default: *)
-//   DB_PATH           SQLite file path (default: ./data/sales.db)
-//   CRON_SCHEDULE     cron expression for auto-refresh (default: '0 6 * * *')
+//   POST /api/sales                       — submit a new sale (requires auth)
+//   GET  /api/auth/me                     — current session
+//   POST /api/auth/signup                 — create account
+//   POST /api/auth/signin                 — sign in
+//   POST /api/auth/signout                — sign out
+//   GET  /api/favorites                   — current user's favorited sale IDs
+//   POST /api/favorites/:saleId           — toggle a favorite
+//   POST /api/admin/refresh               — trigger manual scraper run (admin)
 
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
+import cookieParser from 'cookie-parser';
 import cron from 'node-cron';
 import { searchSales, getSaleById, upsertSale, countSales } from './db.js';
 import { geocode } from './geocode.js';
 import { refreshAll } from './refresh.js';
+import { requireAuth, requireAdmin, optionalAuth } from './auth.js';
+import authRoutes from './routes/auth.js';
+import favoritesRoutes from './routes/favorites.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT) || 3001;
@@ -32,10 +35,11 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '*').split(',').map(s => 
 app.use(compression());
 app.use(cors({
   origin: allowedOrigins.includes('*') ? true : allowedOrigins,
+  credentials: true,  // required for httpOnly cookie exchange
 }));
 app.use(express.json({ limit: '64kb' }));
+app.use(cookieParser());
 
-// Simple request logger
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
@@ -45,6 +49,9 @@ app.use((req, res, next) => {
 });
 
 // ---------- Routes ----------
+
+app.use('/api/auth', authRoutes);
+app.use('/api/favorites', favoritesRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, sales: countSales(), now: new Date().toISOString() });
@@ -77,11 +84,9 @@ app.get('/api/sales/:id', (req, res) => {
 });
 
 /**
- * Submit a new sale. Validates required fields, geocodes the address,
- * stores in the DB. No auth required by default — add a captcha or
- * rate-limiter before exposing publicly.
+ * Submit a new sale. Requires an authenticated user account.
  */
-app.post('/api/sales', async (req, res) => {
+app.post('/api/sales', requireAuth, async (req, res) => {
   const body = req.body || {};
   const required = ['title', 'address', 'city', 'state', 'sale_date'];
   const missing = required.filter(k => !body[k]);
@@ -119,6 +124,8 @@ app.post('/api/sales', async (req, res) => {
       start_time: body.start_time || null,
       end_time: body.end_time || null,
       categories: Array.isArray(body.categories) ? body.categories.slice(0, 6) : [],
+      sale_type: body.sale_type || 'garage_sale',
+      posted_by: req.user.id,
       expires_at: expires,
     });
 
@@ -130,12 +137,9 @@ app.post('/api/sales', async (req, res) => {
 });
 
 /**
- * Manual scraper trigger. Protected by ADMIN_TOKEN.
+ * Manual scraper trigger. Requires admin role.
  */
-app.post('/api/admin/refresh', async (req, res) => {
-  if (!process.env.ADMIN_TOKEN || req.headers['x-admin-token'] !== process.env.ADMIN_TOKEN) {
-    return res.status(401).json({ error: 'unauthorized' });
-  }
+app.post('/api/admin/refresh', requireAdmin, async (req, res) => {
   try {
     const result = await refreshAll();
     res.json({ ok: true, result });
@@ -147,23 +151,19 @@ app.post('/api/admin/refresh', async (req, res) => {
 
 // ---------- Startup ----------
 
-// Schedule auto-refresh. Default: every day at 6 AM local time.
 const schedule = process.env.CRON_SCHEDULE || '0 6 * * *';
 if (cron.validate(schedule)) {
   cron.schedule(schedule, async () => {
     console.log(`[cron] scheduled refresh starting at ${new Date().toISOString()}`);
     try { await refreshAll(); } catch (err) { console.error('[cron] refresh failed:', err); }
   });
-  console.log(`[cron] auto-refresh scheduled with cron expression "${schedule}"`);
+  console.log(`[cron] auto-refresh scheduled: "${schedule}"`);
 } else {
   console.warn(`[cron] invalid CRON_SCHEDULE "${schedule}" — auto-refresh disabled`);
 }
 
 app.listen(PORT, () => {
   console.log(`NorCal Thrifting API listening on http://localhost:${PORT}`);
-  console.log(`  health:  GET  http://localhost:${PORT}/api/health`);
-  console.log(`  search:  GET  http://localhost:${PORT}/api/sales?city=Sacramento`);
-  console.log(`  submit:  POST http://localhost:${PORT}/api/sales`);
   console.log(`  ${countSales()} sales currently in DB`);
 });
 

@@ -1,9 +1,11 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Search, MapPin, Calendar, Clock, Tag, ExternalLink, X, Sparkles, Heart, Filter, Plus, Loader2, AlertCircle } from 'lucide-react';
+import {
+  Search, MapPin, Calendar, Clock, Tag, ExternalLink, X, Sparkles,
+  Heart, Filter, Plus, Loader2, AlertCircle, Shield, LogOut, User,
+  ChevronRight,
+} from 'lucide-react';
 
 // ─── Backend configuration ─────────────────────────────────────────────────
-// Relative path — Vite dev server proxies /api → http://localhost:3001/api.
-// Production: configure your host (nginx, Caddy, etc.) the same way.
 const API_URL = '/api';
 
 // ─── Bundled fallback data ─────────────────────────────────────────────────
@@ -19,75 +21,25 @@ const SAMPLE_SALES = [
     description: "Moving to a condo, everything must go. Antique sewing machine, hand-stitched quilts, cast iron cookware, gardening equipment, holiday decorations, and a workbench full of woodworking tools.",
     categories: ["Antiques", "Tools", "Home Goods"], source: "Craigslist", address_visible: true },
   { id: 3, title: "Estate Sale — Mid-Century Collector", address: "55 Larkspur Drive",
-    city: "Portland", state: "OR", zip: "97214",
+    city: "Sacramento", state: "CA", zip: "95814",
     sale_date: "2026-05-02", start_time: "09:00", end_time: "16:00",
-    description: "Estate of a longtime architect. Eames-era furniture, Heath ceramics, original artwork, drafting tables, slide rules, an extensive jazz collection, and a 1968 Mercedes (sold separately, inquire inside).",
+    description: "Estate of a longtime architect. Eames-era furniture, Heath ceramics, original artwork, drafting tables, slide rules, an extensive jazz collection.",
     categories: ["Estate Sale", "Vintage", "Art", "Furniture"], source: "EstateSales.net", address_visible: true },
   { id: 4, title: "Neighborhood-Wide Garage Sale", address: "Riverbend Subdivision (start at Clubhouse)",
-    city: "Austin", state: "TX", zip: "78745",
+    city: "Elk Grove", state: "CA", zip: "95758",
     sale_date: "2026-05-09", start_time: "07:30", end_time: "15:00",
-    description: "Over 40 homes participating! Maps available at the clubhouse. Expect everything: baby gear, electronics, sporting goods, books, furniture, plants, and a community bake sale fundraiser.",
+    description: "Over 40 homes participating! Maps available at the clubhouse. Baby gear, electronics, sporting goods, books, furniture, plants, and a community bake sale fundraiser.",
     categories: ["Multi-Family", "Community", "Everything"], source: "Nextdoor", address_visible: true },
   { id: 5, title: "Books, Books, and More Books", address: "412 Elm Street",
-    city: "Madison", state: "WI", zip: "53703",
+    city: "Davis", state: "CA", zip: "95616",
     sale_date: "2026-05-04", start_time: "10:00", end_time: "17:00",
-    description: "Retired English professor liquidating personal library. Over 3,000 books — literary fiction, poetry, philosophy, history, and rare first editions. All paperbacks $1, hardcovers $3, rare books priced individually.",
+    description: "Retired professor liquidating personal library. Over 3,000 books — literary fiction, poetry, philosophy, history, and rare first editions. All paperbacks $1, hardcovers $3.",
     categories: ["Books", "Collectibles"], source: "Local Newspaper", address_visible: true },
   { id: 6, title: "Moving Sale — Everything Must Go", address: "1820 Cherry Blossom Way",
-    city: "Seattle", state: "WA", zip: "98103",
+    city: "Folsom", state: "CA", zip: "95630",
     sale_date: "2026-05-10", start_time: "09:00", end_time: "15:00",
-    description: "Relocating overseas. Modern furniture (couch, bed, dining set), full kitchen, two bicycles, camping gear, plants. Make reasonable offers.",
+    description: "Relocating out of state. Modern furniture (couch, bed, dining set), full kitchen set, two bicycles, camping gear, plants. Make reasonable offers.",
     categories: ["Furniture", "Outdoor", "Home Goods"], source: "Facebook Marketplace", address_visible: true },
-  { id: 7, title: "Kid Stuff Mega-Sale", address: "67 Sycamore Court",
-    city: "Denver", state: "CO", zip: "80206",
-    sale_date: "2026-05-03", start_time: "08:00", end_time: "12:00",
-    description: "Twins outgrew everything! Strollers, car seats, high chairs, toys for ages 0-5, clothes (NB to 4T), books, and a like-new wooden play kitchen.",
-    categories: ["Kids", "Baby Gear"], source: "Nextdoor", address_visible: true },
-  { id: 8, title: "Garage Workshop Liquidation", address: "3340 Industrial Park Road",
-    city: "Phoenix", state: "AZ", zip: "85016",
-    sale_date: "2026-05-09", start_time: "06:30", end_time: "14:00",
-    description: "Retiring contractor. Power tools (DeWalt, Milwaukee, Makita), hand tools, ladders, scaffolding, work benches, two tool chests, and assorted lumber. Cash preferred for tools over $50.",
-    categories: ["Tools", "Workshop"], source: "Craigslist", address_visible: true },
-  { id: 9, title: "Vintage Clothing & Jewelry", address: "228 Magnolia Avenue",
-    city: "Charleston", state: "SC", zip: "29401",
-    sale_date: "2026-05-04", start_time: "10:00", end_time: "16:00",
-    description: "Curated collection from a longtime vintage hunter. 1940s–1980s clothing (all sizes), costume jewelry, hats, handbags, scarves, and a rack of formal wear. Everything cleaned and pressed.",
-    categories: ["Clothing", "Vintage", "Jewelry"], source: "Instagram", address_visible: true },
-  { id: 10, title: "Plants, Pots & Garden Goods", address: "1501 Greenwood Place",
-    city: "Asheville", state: "NC", zip: "28801",
-    sale_date: "2026-05-02", start_time: "09:00", end_time: "13:00",
-    description: "Plant parent moving to apartment. 100+ houseplants (philodendrons, monsteras, snake plants, orchids), terracotta pots, grow lights, soil, and gardening books.",
-    categories: ["Plants", "Garden"], source: "Facebook Marketplace", address_visible: true },
-  { id: 11, title: "Record & Stereo Equipment Sale", address: "918 Beacon Street",
-    city: "Boston", state: "MA", zip: "02215",
-    sale_date: "2026-05-10", start_time: "11:00", end_time: "17:00",
-    description: "Audiophile downsizing collection. 800+ LPs (jazz, classical, rock), Technics turntable, McIntosh amplifier, Klipsch speakers, hundreds of CDs.",
-    categories: ["Music", "Electronics", "Vintage"], source: "Craigslist", address_visible: true },
-  { id: 12, title: "Sports & Outdoor Gear", address: "76 Pinecrest Drive",
-    city: "Boulder", state: "CO", zip: "80302",
-    sale_date: "2026-05-03", start_time: "08:30", end_time: "14:00",
-    description: "Skis, snowboards, climbing gear, two kayaks, mountain bikes, camping tents (2-6 person), backpacks, and ski apparel (M/L). Most gear gently used.",
-    categories: ["Outdoor", "Sports"], source: "Nextdoor", address_visible: true },
-  { id: 13, title: "Artist's Studio Sale", address: "1145 Industrial Loft #4B",
-    city: "Brooklyn", state: "NY", zip: "11211",
-    sale_date: "2026-05-04", start_time: "12:00", end_time: "18:00",
-    description: "Painter clearing studio. Original canvases (small to large), art supplies, easels, frames, vintage art books, and a flat file cabinet. Cash or Venmo.",
-    categories: ["Art", "Vintage"], source: "Instagram", address_visible: true },
-  { id: 14, title: "Holiday Decoration Extravaganza", address: "2207 Birch Hollow Lane",
-    city: "Minneapolis", state: "MN", zip: "55408",
-    sale_date: "2026-05-09", start_time: "08:00", end_time: "13:00",
-    description: "Decades of accumulated holiday decor. Christmas (tree, ornaments, lights, nativity), Halloween (costumes, animatronics, lawn decor), Thanksgiving, Easter — even Fourth of July.",
-    categories: ["Holiday", "Home Goods"], source: "Local Newspaper", address_visible: true },
-  { id: 15, title: "Multi-Family Suburban Sale", address: "488 Willowbrook Court",
-    city: "Naperville", state: "IL", zip: "60540",
-    sale_date: "2026-05-10", start_time: "07:00", end_time: "15:00",
-    description: "Four families on one cul-de-sac. Furniture, electronics, kitchen items, toys, video games, books, exercise equipment, and a fully stocked beverage table for shoppers.",
-    categories: ["Multi-Family", "Furniture", "Electronics"], source: "Facebook Marketplace", address_visible: true },
-  { id: 16, title: "Crafter's Estate Sale", address: "33 Heritage Lane",
-    city: "Nashville", state: "TN", zip: "37205",
-    sale_date: "2026-05-02", start_time: "09:00", end_time: "15:00",
-    description: "Lifelong quilter and crafter. Sewing machines (Singer, Bernina), thousands of yards of fabric, yarn, beading supplies, scrapbooking materials, and craft furniture.",
-    categories: ["Crafts", "Estate Sale"], source: "EstateSales.net", address_visible: true },
 ];
 
 const STATES = [
@@ -111,21 +63,42 @@ function buildMapUrl(sale) {
   const parts = [sale.address, sale.city, sale.state, sale.zip].filter(Boolean);
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(parts.join(', '))}`;
 }
+function initials(name) {
+  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+}
 
 export default function NorCalThrifting() {
-  const [query, setQuery] = useState("");
+  const [query, setQuery]           = useState("");
   const [stateFilter, setStateFilter] = useState("All");
   const [showFilters, setShowFilters] = useState(false);
-  const [favorites, setFavorites] = useState(new Set());
-  const [showFaves, setShowFaves] = useState(false);
-  const [sortBy, setSortBy] = useState("date");
-  const [sales, setSales] = useState(SAMPLE_SALES);
-  const [loading, setLoading] = useState(false);
+  const [favorites, setFavorites]   = useState(new Set());
+  const [showFaves, setShowFaves]   = useState(false);
+  const [sortBy, setSortBy]         = useState("date");
+  const [sales, setSales]           = useState(SAMPLE_SALES);
+  const [loading, setLoading]       = useState(false);
   const [usingFallback, setUsingFallback] = useState(false);
   const [showSubmit, setShowSubmit] = useState(false);
 
-  // Debounced API fetch — refetches whenever search params change.
-  // If the API isn't reachable, falls back to the bundled SAMPLE_SALES.
+  // Auth state
+  const [user, setUser]         = useState(null);   // null = not logged in
+  const [showAuth, setShowAuth] = useState(false);
+  const [authMode, setAuthMode] = useState('signin'); // 'signin' | 'signup'
+
+  // ─── Restore session on mount ─────────────────────────────────────────────
+  useEffect(() => {
+    fetch(`${API_URL}/auth/me`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.user) return;
+        setUser(data.user);
+        return fetch(`${API_URL}/favorites`, { credentials: 'include' })
+          .then(r => r.ok ? r.json() : { ids: [] })
+          .then(fav => setFavorites(new Set(fav.ids || [])));
+      })
+      .catch(() => {});
+  }, []);
+
+  // ─── Fetch sales ──────────────────────────────────────────────────────────
   const debounceRef = useRef(null);
   const fetchSales = useCallback(async () => {
     setLoading(true);
@@ -133,13 +106,15 @@ export default function NorCalThrifting() {
       const params = new URLSearchParams();
       if (query) params.set('q', query);
       if (stateFilter && stateFilter !== 'All') params.set('state', stateFilter);
-      const res = await fetch(`${API_URL}/sales?${params.toString()}`, { signal: AbortSignal.timeout(4000) });
+      const res = await fetch(`${API_URL}/sales?${params.toString()}`, {
+        credentials: 'include',
+        signal: AbortSignal.timeout(4000),
+      });
       if (!res.ok) throw new Error('bad status');
       const data = await res.json();
       setSales(data.sales || []);
       setUsingFallback(false);
-    } catch (err) {
-      // API unreachable — use bundled samples and let the user know.
+    } catch {
       setSales(SAMPLE_SALES);
       setUsingFallback(true);
     } finally {
@@ -153,11 +128,9 @@ export default function NorCalThrifting() {
     return () => clearTimeout(debounceRef.current);
   }, [fetchSales]);
 
-  // Client-side filtering for favorites + sorting (server already handled q/state)
+  // ─── Client-side filter + sort ────────────────────────────────────────────
   const filtered = useMemo(() => {
     let results = sales;
-
-    // If using fallback, do all filtering client-side
     if (usingFallback) {
       const q = query.trim().toLowerCase();
       results = results.filter(s => {
@@ -171,9 +144,7 @@ export default function NorCalThrifting() {
         );
       });
     }
-
     if (showFaves) results = results.filter(s => favorites.has(s.id));
-
     if (sortBy === "date") {
       results = [...results].sort((a, b) => (a.sale_date || '9999').localeCompare(b.sale_date || '9999'));
     } else if (sortBy === "city") {
@@ -182,17 +153,59 @@ export default function NorCalThrifting() {
     return results;
   }, [sales, usingFallback, query, stateFilter, showFaves, favorites, sortBy]);
 
-  const toggleFave = (id) => {
-    setFavorites(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+  // ─── Favorites ────────────────────────────────────────────────────────────
+  const toggleFave = async (id) => {
+    if (user) {
+      try {
+        const res = await fetch(`${API_URL}/favorites/${id}`, {
+          method: 'POST', credentials: 'include',
+        });
+        const data = await res.json();
+        setFavorites(prev => {
+          const next = new Set(prev);
+          data.favorited ? next.add(id) : next.delete(id);
+          return next;
+        });
+      } catch {}
+    } else {
+      // Not logged in — toggle locally and nudge them to sign in
+      setFavorites(prev => {
+        const next = new Set(prev);
+        next.has(id) ? next.delete(id) : next.add(id);
+        return next;
+      });
+    }
+  };
+
+  // ─── Sign out ─────────────────────────────────────────────────────────────
+  const signOut = async () => {
+    await fetch(`${API_URL}/auth/signout`, { method: 'POST', credentials: 'include' });
+    setUser(null);
+    setFavorites(new Set());
   };
 
   const openMap = (sale, e) => {
     e.preventDefault();
     window.open(buildMapUrl(sale), "_blank", "noopener,noreferrer");
+  };
+
+  const handleAuthSuccess = (loggedInUser) => {
+    setUser(loggedInUser);
+    setShowAuth(false);
+    // Load server favorites
+    fetch(`${API_URL}/favorites`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : { ids: [] })
+      .then(fav => setFavorites(new Set(fav.ids || [])))
+      .catch(() => {});
+  };
+
+  const openAddSale = () => {
+    if (!user) {
+      setAuthMode('signin');
+      setShowAuth(true);
+    } else {
+      setShowSubmit(true);
+    }
   };
 
   return (
@@ -209,28 +222,91 @@ export default function NorCalThrifting() {
         opacity: 0.6, mixBlendMode: "multiply", zIndex: 0,
       }} />
 
-      <header style={{ position: "relative", zIndex: 1, padding: "32px 24px 16px", maxWidth: "1100px", margin: "0 auto", textAlign: "center" }}>
+      {/* ─── Admin Banner ────────────────────────────────────────────────── */}
+      {user?.role === 'admin' && (
         <div style={{
-          display: "inline-flex", alignItems: "center", gap: "10px",
-          padding: "6px 14px", borderRadius: "999px",
-          background: "rgba(198, 107, 61, 0.12)", color: "#A8542C",
-          fontSize: "13px", fontWeight: 600, letterSpacing: "0.04em", marginBottom: "20px",
+          position: "sticky", top: 0, zIndex: 200,
+          background: "#A8542C", color: "#FFFCF6",
+          padding: "10px 24px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
         }}>
-          <Sparkles size={14} /> WEEKEND TREASURE HUNTING
+          <span style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", fontWeight: 700 }}>
+            <Shield size={16} />
+            Admin — {user.name}
+          </span>
+          <button onClick={signOut} style={{
+            display: "flex", alignItems: "center", gap: "6px",
+            background: "rgba(255,252,246,0.15)", border: "1px solid rgba(255,252,246,0.3)",
+            color: "#FFFCF6", borderRadius: "8px", padding: "5px 12px",
+            fontSize: "13px", fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
+          }}>
+            <LogOut size={14} /> Sign out
+          </button>
         </div>
-        <h1 style={{
-          fontFamily: "'Fraunces', serif", fontSize: "clamp(48px, 7vw, 80px)",
-          fontWeight: 600, fontStyle: "italic", margin: "0 0 12px",
-          letterSpacing: "-0.02em", color: "#2C1F17", lineHeight: 1,
-        }}>
-          NorCal Thrifting
-        </h1>
-        <p style={{ fontSize: "17px", color: "#6B5444", maxWidth: "560px", margin: "0 auto", lineHeight: 1.5 }}>
-          Your NorCal guide to garage sales, estate sales, thrift stores, and curbside treasures.
-        </p>
+      )}
+
+      <header style={{ position: "relative", zIndex: 1, padding: "32px 24px 16px", maxWidth: "1100px", margin: "0 auto" }}>
+        {/* ─── User bar ────────────────────────────────────────────────── */}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "16px" }}>
+          {user && user.role !== 'admin' ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div style={{
+                width: "32px", height: "32px", borderRadius: "50%",
+                background: "#A8542C", color: "#FFFCF6",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "13px", fontWeight: 700,
+              }}>
+                {initials(user.name)}
+              </div>
+              <span style={{ fontSize: "14px", color: "#6B5444" }}>Hi, {user.name.split(' ')[0]}</span>
+              <button onClick={signOut} style={{
+                display: "flex", alignItems: "center", gap: "5px",
+                background: "none", border: "1px solid #E8DCC8", borderRadius: "8px",
+                padding: "5px 10px", fontSize: "13px", color: "#9A8472",
+                fontFamily: "inherit", cursor: "pointer",
+              }}>
+                <LogOut size={13} /> Sign out
+              </button>
+            </div>
+          ) : !user ? (
+            <button
+              onClick={() => { setAuthMode('signin'); setShowAuth(true); }}
+              style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                background: "none", border: "1px solid #E8DCC8", borderRadius: "8px",
+                padding: "7px 14px", fontSize: "14px", fontWeight: 600,
+                color: "#A8542C", fontFamily: "inherit", cursor: "pointer",
+              }}
+            >
+              <User size={15} /> Sign in
+            </button>
+          ) : null}
+        </div>
+
+        <div style={{ textAlign: "center" }}>
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: "10px",
+            padding: "6px 14px", borderRadius: "999px",
+            background: "rgba(198, 107, 61, 0.12)", color: "#A8542C",
+            fontSize: "13px", fontWeight: 600, letterSpacing: "0.04em", marginBottom: "20px",
+          }}>
+            <Sparkles size={14} /> WEEKEND TREASURE HUNTING
+          </div>
+          <h1 style={{
+            fontFamily: "'Fraunces', serif", fontSize: "clamp(48px, 7vw, 80px)",
+            fontWeight: 600, fontStyle: "italic", margin: "0 0 12px",
+            letterSpacing: "-0.02em", color: "#2C1F17", lineHeight: 1,
+          }}>
+            NorCal Thrifting
+          </h1>
+          <p style={{ fontSize: "17px", color: "#6B5444", maxWidth: "560px", margin: "0 auto", lineHeight: 1.5 }}>
+            Your NorCal guide to garage sales, estate sales, thrift stores, and curbside treasures.
+          </p>
+        </div>
       </header>
 
-      {/* Status banner when running on bundled data */}
+      {/* Status banner when using fallback data */}
       {usingFallback && (
         <div style={{
           position: "relative", zIndex: 1, maxWidth: "1100px",
@@ -244,13 +320,17 @@ export default function NorCalThrifting() {
           }}>
             <AlertCircle size={16} />
             <span>
-              Showing bundled sample data — backend API at <code style={{ background: "rgba(0,0,0,0.05)", padding: "1px 6px", borderRadius: "4px", fontFamily: "monospace" }}>{API_URL}</code> isn't reachable.
+              Showing bundled sample data — backend API at{' '}
+              <code style={{ background: "rgba(0,0,0,0.05)", padding: "1px 6px", borderRadius: "4px", fontFamily: "monospace" }}>
+                {API_URL}
+              </code>{' '}
+              isn't reachable.
             </span>
           </div>
         </div>
       )}
 
-      {/* Search */}
+      {/* ─── Search bar ──────────────────────────────────────────────────── */}
       <div style={{ position: "relative", zIndex: 1, maxWidth: "1100px", margin: "24px auto 0", padding: "0 24px" }}>
         <div style={{
           background: "#FFFCF6", border: "1px solid #E8DCC8", borderRadius: "20px", padding: "20px",
@@ -268,7 +348,8 @@ export default function NorCalThrifting() {
                   padding: "14px 12px", fontSize: "16px", fontFamily: "inherit", color: "#3D2E26" }}
               />
               {query && (
-                <button onClick={() => setQuery("")} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", color: "#9A8472" }}>
+                <button onClick={() => setQuery("")}
+                  style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", color: "#9A8472" }}>
                   <X size={18} />
                 </button>
               )}
@@ -280,7 +361,7 @@ export default function NorCalThrifting() {
               <Heart size={18} fill={showFaves ? "#FFFCF6" : "none"} />
               Saved {favorites.size > 0 && `(${favorites.size})`}
             </button>
-            <button onClick={() => setShowSubmit(true)} style={btnStyle(false, "#A8542C", true)}>
+            <button onClick={openAddSale} style={btnStyle(false, "#A8542C", true)}>
               <Plus size={18} /> Add a Sale
             </button>
           </div>
@@ -308,6 +389,29 @@ export default function NorCalThrifting() {
         </div>
       </div>
 
+      {/* ─── Not-logged-in favorites nudge ───────────────────────────────── */}
+      {!user && favorites.size > 0 && (
+        <div style={{
+          position: "relative", zIndex: 1, maxWidth: "1100px",
+          margin: "10px auto 0", padding: "0 24px",
+        }}>
+          <button
+            onClick={() => { setAuthMode('signup'); setShowAuth(true); }}
+            style={{
+              width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+              padding: "10px 16px", borderRadius: "12px", border: "1px dashed #C9B89E",
+              background: "rgba(200, 160, 100, 0.07)", color: "#7A5C44",
+              fontSize: "13px", fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
+            }}
+          >
+            <Heart size={14} fill="#C66B3D" color="#C66B3D" />
+            Sign in to save your {favorites.size} {favorites.size === 1 ? 'favorite' : 'favorites'} permanently
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* ─── Results header ───────────────────────────────────────────────── */}
       <div style={{
         position: "relative", zIndex: 1, maxWidth: "1100px",
         margin: "32px auto 16px", padding: "0 24px",
@@ -321,6 +425,7 @@ export default function NorCalThrifting() {
         </span>
       </div>
 
+      {/* ─── Sale cards ───────────────────────────────────────────────────── */}
       <div style={{
         position: "relative", zIndex: 1, maxWidth: "1100px", margin: "0 auto", padding: "0 24px",
         display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "20px",
@@ -366,8 +471,9 @@ export default function NorCalThrifting() {
               <div style={infoRowStyle}>
                 <MapPin size={16} color="#A8542C" style={{ marginTop: "2px", flexShrink: 0 }} />
                 <span>
-                  {sale.address_visible !== false && sale.address ? (<>{sale.address}<br /></>) :
-                    <em style={{ color: "#9A8472" }}>Contact poster for full address<br /></em>}
+                  {sale.address_visible !== false && sale.address
+                    ? <>{sale.address}<br /></>
+                    : <em style={{ color: "#9A8472" }}>Contact poster for full address<br /></em>}
                   {sale.city}, {sale.state} {sale.zip}
                 </span>
               </div>
@@ -426,8 +532,136 @@ export default function NorCalThrifting() {
       </footer>
 
       {showSubmit && <SubmitModal onClose={() => setShowSubmit(false)} onSuccess={fetchSales} />}
+      {showAuth && (
+        <AuthModal
+          mode={authMode}
+          onSwitchMode={setAuthMode}
+          onSuccess={handleAuthSuccess}
+          onClose={() => setShowAuth(false)}
+        />
+      )}
 
-      <style>{`@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} } .spin{animation:spin 1s linear infinite}`}</style>
+      <style>{`
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        .spin { animation: spin 1s linear infinite }
+      `}</style>
+    </div>
+  );
+}
+
+// ─── Auth Modal ─────────────────────────────────────────────────────────────
+function AuthModal({ mode, onSwitchMode, onSuccess, onClose }) {
+  const [name, setName]         = useState('');
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError]       = useState(null);
+
+  const isSignUp = mode === 'signup';
+
+  const submit = async () => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const body = isSignUp ? { name, email, password } : { email, password };
+      const res = await fetch(`${API_URL}/auth/${isSignUp ? 'signup' : 'signin'}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const msgs = {
+          missing_fields:     'Please fill in all fields.',
+          invalid_email:      'Enter a valid email address.',
+          password_too_short: 'Password must be at least 8 characters.',
+          email_taken:        'That email is already registered. Sign in instead?',
+          invalid_credentials:'Incorrect email or password.',
+          invalid_name:       'Name must be between 1 and 80 characters.',
+        };
+        throw new Error(msgs[data.error] || 'Something went wrong. Try again.');
+      }
+      onSuccess(data.user);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleKey = (e) => { if (e.key === 'Enter') submit(); };
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(44, 31, 23, 0.5)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 100, padding: "20px", backdropFilter: "blur(4px)",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: "#FFFCF6", borderRadius: "20px", padding: "28px",
+        maxWidth: "400px", width: "100%",
+        boxShadow: "0 20px 60px rgba(44, 31, 23, 0.3)",
+      }}>
+        {/* Tabs */}
+        <div style={{ display: "flex", marginBottom: "24px", borderBottom: "1px solid #E8DCC8" }}>
+          {['signin', 'signup'].map(m => (
+            <button key={m} onClick={() => { onSwitchMode(m); setError(null); }} style={{
+              flex: 1, padding: "10px", border: "none", background: "none",
+              fontFamily: "inherit", fontSize: "15px", fontWeight: 700, cursor: "pointer",
+              color: mode === m ? "#A8542C" : "#9A8472",
+              borderBottom: mode === m ? "2px solid #A8542C" : "2px solid transparent",
+              marginBottom: "-1px", transition: "all 0.15s",
+            }}>
+              {m === 'signin' ? 'Sign in' : 'Create account'}
+            </button>
+          ))}
+          <button onClick={onClose} style={{
+            background: "none", border: "none", cursor: "pointer", color: "#9A8472", padding: "8px",
+          }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          {isSignUp && (
+            <Field label="Your name" value={name} onChange={setName} placeholder="First Last" onKeyDown={handleKey} />
+          )}
+          <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" onKeyDown={handleKey} />
+          <Field label="Password" type="password" value={password} onChange={setPassword}
+            placeholder={isSignUp ? "At least 8 characters" : "Your password"} onKeyDown={handleKey} />
+
+          {error && (
+            <div style={{
+              padding: "10px 14px", borderRadius: "8px",
+              background: "rgba(198, 107, 61, 0.1)", color: "#A8542C", fontSize: "13px",
+            }}>
+              {error}
+            </div>
+          )}
+
+          <button onClick={submit} disabled={submitting} style={{
+            marginTop: "4px", padding: "14px", borderRadius: "12px",
+            background: "#A8542C", color: "#FFFCF6", border: "none",
+            fontSize: "16px", fontWeight: 700, fontFamily: "inherit",
+            cursor: submitting ? "wait" : "pointer", opacity: submitting ? 0.6 : 1,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+          }}>
+            {submitting && <Loader2 size={16} className="spin" />}
+            {submitting ? (isSignUp ? 'Creating account…' : 'Signing in…') : (isSignUp ? 'Create account' : 'Sign in')}
+          </button>
+
+          <p style={{ textAlign: "center", fontSize: "13px", color: "#9A8472", margin: 0 }}>
+            {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
+            <button onClick={() => { onSwitchMode(isSignUp ? 'signin' : 'signup'); setError(null); }} style={{
+              background: "none", border: "none", color: "#A8542C", fontWeight: 700,
+              cursor: "pointer", fontSize: "13px", fontFamily: "inherit", padding: 0,
+            }}>
+              {isSignUp ? 'Sign in' : 'Sign up'}
+            </button>
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -452,6 +686,7 @@ function SubmitModal({ onClose, onSuccess }) {
       const res = await fetch(`${API_URL}/sales`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           ...form,
           categories: form.categories.split(',').map(s => s.trim()).filter(Boolean),
@@ -464,7 +699,7 @@ function SubmitModal({ onClose, onSuccess }) {
       setDone(true);
       setTimeout(() => { onSuccess?.(); onClose(); }, 1200);
     } catch (err) {
-      setError(err.message + ' (is the backend running on port 3001?)');
+      setError(err.message);
     } finally {
       setSubmitting(false);
     }
@@ -537,13 +772,14 @@ function SubmitModal({ onClose, onSuccess }) {
   );
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text', multiline = false }) {
+function Field({ label, value, onChange, placeholder, type = 'text', multiline = false, onKeyDown }) {
   const Tag = multiline ? 'textarea' : 'input';
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "13px", fontWeight: 600, color: "#6B5444" }}>
       {label}
       <Tag type={type} value={value} placeholder={placeholder}
         onChange={e => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
         rows={multiline ? 3 : undefined}
         style={{
           padding: "10px 12px", borderRadius: "10px",
@@ -559,12 +795,13 @@ function Field({ label, value, onChange, placeholder, type = 'text', multiline =
 // ─── Style helpers ──────────────────────────────────────────────────────────
 const btnStyle = (active, color, primary = false) => ({
   display: "flex", alignItems: "center", gap: "8px",
-  padding: "0 20px", borderRadius: "12px",
+  padding: "0 20px", borderRadius: "12px", height: "52px",
   background: primary ? color : (active ? color : "#FBF5EC"),
   color: primary || active ? "#FFFCF6" : "#3D2E26",
   border: "1px solid #E8DCC8",
   fontSize: "15px", fontWeight: 600, fontFamily: "inherit",
   cursor: "pointer", transition: "all 0.2s",
+  whiteSpace: "nowrap",
 });
 const selectStyle = {
   padding: "8px 12px", borderRadius: "8px",

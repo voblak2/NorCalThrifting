@@ -30,7 +30,7 @@ if (existsSync(DB_PATH)) {
   dbInstance = new SQL.Database();
 }
 
-// Schema — same as the better-sqlite3 version.
+// Schema
 dbInstance.run(`
   CREATE TABLE IF NOT EXISTS sales (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,6 +59,41 @@ dbInstance.run(`
   CREATE INDEX IF NOT EXISTS idx_sales_zip      ON sales(zip);
   CREATE INDEX IF NOT EXISTS idx_sales_date     ON sales(sale_date);
   CREATE INDEX IF NOT EXISTS idx_sales_expires  ON sales(expires_at);
+
+  CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT    NOT NULL,
+    email         TEXT    NOT NULL UNIQUE,
+    password_hash TEXT    NOT NULL,
+    role          TEXT    NOT NULL DEFAULT 'customer',
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS favorites (
+    user_id    INTEGER NOT NULL,
+    sale_id    INTEGER NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, sale_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
+  );
+`);
+
+// Migrate existing sales table — add new columns if they don't exist yet.
+// SQLite throws on duplicate ADD COLUMN, so we swallow those errors.
+for (const col of [
+  'posted_by INTEGER',
+  "sale_type TEXT DEFAULT 'garage_sale'",
+  "status TEXT DEFAULT 'active'",
+  "photo_urls TEXT DEFAULT '[]'",
+]) {
+  try { dbInstance.run(`ALTER TABLE sales ADD COLUMN ${col}`); } catch (_) {}
+}
+
+// Indexes for new columns
+dbInstance.run(`
+  CREATE INDEX IF NOT EXISTS idx_sales_type   ON sales(sale_type);
+  CREATE INDEX IF NOT EXISTS idx_sales_status ON sales(status);
 `);
 
 // Persist DB to disk. Called after every write.
@@ -92,17 +127,21 @@ export function upsertSale(sale) {
     categories:      JSON.stringify(sale.categories ?? []),
     address_visible: sale.address_visible === false ? 0 : 1,
     expires_at:      sale.expires_at       ?? null,
+    sale_type:       sale.sale_type        ?? 'garage_sale',
+    status:          sale.status           ?? 'active',
+    posted_by:       sale.posted_by        ?? null,
+    photo_urls:      JSON.stringify(sale.photo_urls ?? []),
   };
 
   const stmt = dbInstance.prepare(`
     INSERT INTO sales (
       source, source_url, source_id, title, description, address,
       city, state, zip, lat, lng, sale_date, start_time, end_time,
-      categories, address_visible, expires_at
+      categories, address_visible, expires_at, sale_type, status, posted_by, photo_urls
     ) VALUES (
       :source, :source_url, :source_id, :title, :description, :address,
       :city, :state, :zip, :lat, :lng, :sale_date, :start_time, :end_time,
-      :categories, :address_visible, :expires_at
+      :categories, :address_visible, :expires_at, :sale_type, :status, :posted_by, :photo_urls
     )
     ON CONFLICT(source, source_id) DO UPDATE SET
       title=excluded.title,
@@ -118,7 +157,9 @@ export function upsertSale(sale) {
       end_time=excluded.end_time,
       categories=excluded.categories,
       address_visible=excluded.address_visible,
-      expires_at=excluded.expires_at
+      expires_at=excluded.expires_at,
+      sale_type=excluded.sale_type,
+      status=excluded.status
   `);
 
   // sql.js wants prefixed param names
@@ -138,7 +179,11 @@ export function upsertSale(sale) {
 // ---------- Query ----------
 
 export function searchSales(opts = {}) {
-  const where = [`(expires_at IS NULL OR expires_at >= date('now'))`];
+  const where = [
+    `(expires_at IS NULL OR expires_at >= date('now'))`,
+    // Only show active listings unless caller explicitly asks for all
+    ...(opts.status === 'all' ? [] : [`status = 'active'`]),
+  ];
   const params = {};
 
   if (opts.state && opts.state !== 'All') {
@@ -210,9 +255,90 @@ export function countSales() {
 function deserialize(row) {
   return {
     ...row,
-    categories: JSON.parse(row.categories || '[]'),
+    categories:     JSON.parse(row.categories  || '[]'),
+    photo_urls:     JSON.parse(row.photo_urls  || '[]'),
     address_visible: !!row.address_visible,
   };
+}
+
+// ---------- Users ----------
+
+export function createUser({ name, email, passwordHash, role = 'customer' }) {
+  try {
+    const stmt = dbInstance.prepare(`
+      INSERT INTO users (name, email, password_hash, role)
+      VALUES (:name, :email, :hash, :role)
+    `);
+    stmt.run({ ':name': name, ':email': email.toLowerCase(), ':hash': passwordHash, ':role': role });
+    stmt.free();
+    const idResult = dbInstance.exec('SELECT last_insert_rowid() AS id');
+    const id = idResult[0]?.values[0]?.[0] ?? null;
+    persist();
+    return { id, name, email: email.toLowerCase(), role };
+  } catch (err) {
+    if (err.message?.includes('UNIQUE constraint failed: users.email')) throw new Error('email_taken');
+    throw err;
+  }
+}
+
+export function getUserByEmail(email) {
+  const stmt = dbInstance.prepare(`SELECT * FROM users WHERE LOWER(email) = LOWER(:email) LIMIT 1`);
+  stmt.bind({ ':email': email });
+  let result = null;
+  if (stmt.step()) result = stmt.getAsObject();
+  stmt.free();
+  return result;
+}
+
+export function getUserById(id) {
+  const stmt = dbInstance.prepare(`SELECT * FROM users WHERE id = :id LIMIT 1`);
+  stmt.bind({ ':id': id });
+  let result = null;
+  if (stmt.step()) result = stmt.getAsObject();
+  stmt.free();
+  return result;
+}
+
+export function countUsers() {
+  const result = dbInstance.exec(`SELECT COUNT(*) as n FROM users`);
+  return result[0]?.values[0]?.[0] ?? 0;
+}
+
+// ---------- Favorites ----------
+
+export function getFavoriteIds(userId) {
+  const stmt = dbInstance.prepare(`SELECT sale_id FROM favorites WHERE user_id = :uid`);
+  stmt.bind({ ':uid': userId });
+  const ids = [];
+  while (stmt.step()) ids.push(stmt.getAsObject().sale_id);
+  stmt.free();
+  return ids;
+}
+
+export function addFavorite(userId, saleId) {
+  dbInstance.run(
+    `INSERT OR IGNORE INTO favorites (user_id, sale_id) VALUES (:uid, :sid)`,
+    { ':uid': userId, ':sid': saleId }
+  );
+  persist();
+}
+
+export function removeFavorite(userId, saleId) {
+  dbInstance.run(
+    `DELETE FROM favorites WHERE user_id = :uid AND sale_id = :sid`,
+    { ':uid': userId, ':sid': saleId }
+  );
+  persist();
+}
+
+export function hasFavorite(userId, saleId) {
+  const stmt = dbInstance.prepare(
+    `SELECT 1 FROM favorites WHERE user_id = :uid AND sale_id = :sid LIMIT 1`
+  );
+  stmt.bind({ ':uid': userId, ':sid': saleId });
+  const found = stmt.step();
+  stmt.free();
+  return found;
 }
 
 // Export the underlying connection for advanced use (matches the old export name)
