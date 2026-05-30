@@ -38,7 +38,8 @@
       "Bash(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\Vince\\\\.claude\\\\projects\\\\c--Projects-NorCalThrifting\\\\memory\")",
       "Bash(Out-Null)",
       "Bash(Copy-Item \"C:\\\\Users\\\\Vince\\\\.claude\\\\projects\\\\c--Projects-GarageSaleFinder\\\\memory\\\\*\" \"C:\\\\Users\\\\Vince\\\\.claude\\\\projects\\\\c--Projects-NorCalThrifting\\\\memory\\\\\" -Recurse)",
-      "Bash(git remote *)"
+      "Bash(git remote *)",
+      "Bash(node --input-type=module)"
     ]
   }
 }
