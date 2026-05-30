@@ -812,6 +812,7 @@ function AdminDashboard({ user, onClose }) {
   const [users, setUsers]           = useState([]);
   const [salesFilter, setSalesFilter] = useState('all');
   const [loading, setLoading]       = useState(false);
+  const [fetchError, setFetchError] = useState(null);
   const [scraperBusy, setScraperBusy] = useState(false);
   const [scraperResult, setScraperResult] = useState(null);
 
@@ -826,15 +827,26 @@ function AdminDashboard({ user, onClose }) {
 
   useEffect(() => {
     setLoading(true);
+    setFetchError(null);
     if (tab === 'listings') {
       const qs = salesFilter !== 'all' ? `?status=${salesFilter}` : '';
       fetch(`${API_URL}/admin/sales${qs}`, { credentials: 'include' })
-        .then(r => r.json()).then(d => setSales(d.sales || []))
-        .catch(() => {}).finally(() => setLoading(false));
+        .then(r => {
+          if (!r.ok) { setFetchError(`Error ${r.status}`); return null; }
+          return r.json();
+        })
+        .then(d => d && setSales(d.sales || []))
+        .catch(err => setFetchError(err.message))
+        .finally(() => setLoading(false));
     } else if (tab === 'users') {
       fetch(`${API_URL}/admin/users`, { credentials: 'include' })
-        .then(r => r.json()).then(d => setUsers(d.users || []))
-        .catch(() => {}).finally(() => setLoading(false));
+        .then(r => {
+          if (!r.ok) { setFetchError(`Error ${r.status}`); return null; }
+          return r.json();
+        })
+        .then(d => d && setUsers(d.users || []))
+        .catch(err => setFetchError(err.message))
+        .finally(() => setLoading(false));
     } else {
       setLoading(false);
     }
@@ -862,11 +874,12 @@ function AdminDashboard({ user, onClose }) {
     setScraperResult(null);
     try {
       const res = await fetch(`${API_URL}/admin/refresh`, { method: 'POST', credentials: 'include' });
-      const data = await res.json();
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : { ok: false, error: 'Empty response' };
       setScraperResult(data);
       loadStats();
-    } catch {
-      setScraperResult({ ok: false, error: 'Request failed' });
+    } catch (err) {
+      setScraperResult({ ok: false, error: err.message || 'Request failed' });
     }
     setScraperBusy(false);
   };
@@ -958,6 +971,15 @@ function AdminDashboard({ user, onClose }) {
           ))}
         </div>
 
+        {fetchError && (
+          <div style={{ padding: '14px 16px', borderRadius: '10px', marginBottom: '16px',
+            background: 'rgba(140,58,42,0.08)', border: '1px solid rgba(140,58,42,0.2)', color: '#8C3A2A', fontSize: '14px' }}>
+            <strong>Could not load data:</strong> {fetchError}
+            {fetchError.includes('401') || fetchError.includes('403')
+              ? ' — You may need to sign out and sign back in.'
+              : ' — Is the backend server running?'}
+          </div>
+        )}
         {loading && (
           <div style={{ textAlign: 'center', padding: '40px', color: '#9A8472' }}>
             <Loader2 size={24} className="spin" />
