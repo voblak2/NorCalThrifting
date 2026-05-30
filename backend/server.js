@@ -26,6 +26,7 @@ import authRoutes from './routes/auth.js';
 import favoritesRoutes from './routes/favorites.js';
 import adminRoutes from './routes/admin.js';
 import uploadsRoutes from './routes/uploads.js';
+import { refreshAll } from './refresh.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT) || 3001;

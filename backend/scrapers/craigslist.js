@@ -1,167 +1,144 @@
-// scrapers/craigslist.js — Pull garage sale listings from Craigslist RSS.
+// scrapers/craigslist.js — Pull garage sale listings from Craigslist HTML.
 //
-// Every Craigslist subdomain exposes RSS feeds for each category. The
-// "garage sale" category is "gms". URL pattern:
-//   https://{city}.craigslist.org/search/gms?format=rss
+// Craigslist's RSS feeds return HTTP 403 for server-side requests, but the
+// regular search results page is server-rendered HTML and works fine with
+// browser-like headers. Cities are trimmed to NorCal / Central Valley only.
 //
-// RSS is a STABLE, EXPLICITLY-SUPPORTED interface — Craigslist publishes
-// these feeds for syndication, so this scraper doesn't risk breaking the
-// way HTML scraping would. The trade-off: addresses are often vague or
-// missing entirely (Craigslist convention is "DM for full address").
-//
-// Add cities to the CRAIGSLIST_CITIES list below to expand coverage.
+// HTML structure (current as of 2025):
+//   <li class="cl-static-search-result" title="Sale Title">
+//     <a href="/gms/d/city-slug/7919524303.html">
+//       <div class="title">Sale Title</div>
+//       <div class="details">
+//         <div class="price">$0</div>
+//         <div class="location">Rancho Cordova</div>  ← sometimes a full address
+//       </div>
+//     </a>
+//   </li>
 
-import RSSParser from 'rss-parser';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { upsertSale } from '../db.js';
 import { parsePost } from '../parser.js';
 import { geocode } from '../geocode.js';
 
-const parser = new RSSParser({
-  customFields: {
-    item: [
-      ['dc:date', 'dcDate'],
-      ['georss:point', 'geoPoint'],
-    ],
-  },
-});
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Connection': 'keep-alive',
+  'Upgrade-Insecure-Requests': '1',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Cache-Control': 'max-age=0',
+};
 
-// Map Craigslist subdomain → { city, state }. Add as needed.
-// Find the subdomain from any Craigslist URL: e.g., sacramento.craigslist.org
+// NorCal / Central Valley subdomains only
 export const CRAIGSLIST_CITIES = [
-  { sub: 'sacramento',    city: 'Sacramento',     state: 'CA' },
-  { sub: 'sfbay',         city: 'San Francisco',  state: 'CA' },
-  { sub: 'losangeles',    city: 'Los Angeles',    state: 'CA' },
-  { sub: 'sandiego',      city: 'San Diego',      state: 'CA' },
-  { sub: 'portland',      city: 'Portland',       state: 'OR' },
-  { sub: 'seattle',       city: 'Seattle',        state: 'WA' },
-  { sub: 'phoenix',       city: 'Phoenix',        state: 'AZ' },
-  { sub: 'denver',        city: 'Denver',         state: 'CO' },
-  { sub: 'austin',        city: 'Austin',         state: 'TX' },
-  { sub: 'dallas',        city: 'Dallas',         state: 'TX' },
-  { sub: 'houston',       city: 'Houston',        state: 'TX' },
-  { sub: 'chicago',       city: 'Chicago',        state: 'IL' },
-  { sub: 'newyork',       city: 'New York',       state: 'NY' },
-  { sub: 'boston',        city: 'Boston',         state: 'MA' },
-  { sub: 'philadelphia',  city: 'Philadelphia',   state: 'PA' },
-  { sub: 'atlanta',       city: 'Atlanta',        state: 'GA' },
-  { sub: 'miami',         city: 'Miami',          state: 'FL' },
-  { sub: 'minneapolis',   city: 'Minneapolis',    state: 'MN' },
-  { sub: 'madison',       city: 'Madison',        state: 'WI' },
-  { sub: 'nashville',     city: 'Nashville',      state: 'TN' },
+  { sub: 'sacramento',  city: 'Sacramento',  state: 'CA' },
+  { sub: 'stockton',    city: 'Stockton',    state: 'CA' },
+  { sub: 'modesto',     city: 'Modesto',     state: 'CA' },
+  { sub: 'fresno',      city: 'Fresno',      state: 'CA' },
+  { sub: 'chico',       city: 'Chico',       state: 'CA' },
+  { sub: 'redding',     city: 'Redding',     state: 'CA' },
+  { sub: 'bakersfield', city: 'Bakersfield', state: 'CA' },
+  { sub: 'merced',      city: 'Merced',      state: 'CA' },
+  { sub: 'visalia',     city: 'Visalia',     state: 'CA' },
 ];
 
-/**
- * Refresh a single Craigslist city.
- * @returns {Promise<{ inserted: number, errors: number }>}
- */
 export async function refreshCity({ sub, city, state }) {
-  const url = `https://${sub}.craigslist.org/search/gms?format=rss`;
-  let feed;
+  const url = `https://${sub}.craigslist.org/search/gms`;
+  let html;
   try {
-    feed = await parser.parseURL(url);
+    const resp = await axios.get(url, { headers: HEADERS, timeout: 15000 });
+    html = resp.data;
   } catch (err) {
-    console.error(`[craigslist] ${sub}: feed fetch failed —`, err.message);
+    console.error(`[craigslist] ${sub}: fetch failed —`, err.message);
     return { inserted: 0, errors: 1 };
   }
 
-  let inserted = 0;
-  let errors = 0;
+  const $ = cheerio.load(html);
+  const items = $('li.cl-static-search-result').toArray();
 
-  // Calculate expiration: 14 days from now (Craigslist auto-removes after ~30)
-  const expiresAt = new Date(Date.now() + 14 * 24 * 3600 * 1000)
-    .toISOString().slice(0, 10);
+  if (items.length === 0) {
+    console.warn(`[craigslist] ${sub}: 0 listings found`);
+    return { inserted: 0, errors: 0 };
+  }
 
-  for (const item of feed.items || []) {
+  let inserted = 0, errors = 0;
+  const expiresAt = new Date(Date.now() + 14 * 24 * 3600_000).toISOString().slice(0, 10);
+
+  for (const el of items) {
     try {
-      const text = stripHtml(item.contentSnippet || item.content || item.summary || '');
-      const fullText = `${item.title}\n${text}`;
-      const postedDate = item.dcDate || item.isoDate || item.pubDate;
+      const $el = $(el);
+      const title = $el.find('.title').text().trim() || $el.attr('title') || '';
+      if (!title) continue;
 
-      const parsed = parsePost(fullText, { postedDate });
+      const anchor = $el.find('a').first();
+      const link = anchor.attr('href') || '';
+      // Extract numeric post ID from URL: /gms/d/city-slug/7919524303.html
+      const pidMatch = link.match(/\/(\d{7,})\.html/);
+      const pid = pidMatch ? pidMatch[1] : null;
+      if (!pid) continue;
 
-      // Try to extract lat/lng from the RSS georss:point if present
+      // Location may be a neighborhood name or a full street address
+      const location = $el.find('.location').text().trim();
+
+      const parsed = parsePost(title, {});
+
+      // Geocode strategy: try address if it looks like a street number, else ZIP, else skip.
       let lat = null, lng = null;
-      if (item.geoPoint && typeof item.geoPoint === 'string') {
-        const [latStr, lngStr] = item.geoPoint.split(/\s+/);
-        lat = parseFloat(latStr) || null;
-        lng = parseFloat(lngStr) || null;
-      }
-
-      // Geocode by ZIP if we have one and no lat/lng
-      if (!lat && parsed.zip) {
+      const hasStreetNum = /^\d{2,5}\s+\w/.test(location);
+      if (hasStreetNum) {
+        const g = await geocode({ address: location, city, state });
+        if (g) { lat = g.lat; lng = g.lng; }
+      } else if (parsed.zip) {
         const g = await geocode({ city, state, zip: parsed.zip });
         if (g) { lat = g.lat; lng = g.lng; }
       }
+      // Craigslist hides most addresses, so many listings won't have map pins — that's fine.
 
       upsertSale({
-        source: 'craigslist',
-        source_url: item.link,
-        source_id: hashId(item.link || item.guid || item.title),
-        title: cleanTitle(item.title),
-        description: text.slice(0, 800),
-        address: null,                  // Craigslist hides full address by convention
-        address_visible: false,
-        city,
+        source:          'craigslist',
+        source_url:      link,
+        source_id:       'cl_' + pid,
+        title:           title.slice(0, 200),
+        description:     '',
+        address:         hasStreetNum ? location : null,
+        address_visible: hasStreetNum,
+        city:            hasStreetNum ? city : (location || city),
         state,
-        zip: parsed.zip,
+        zip:             parsed.zip,
         lat, lng,
-        sale_date: parsed.sale_date,
-        start_time: parsed.start_time,
-        end_time: parsed.end_time,
-        categories: parsed.categories,
-        expires_at: expiresAt,
+        sale_date:       parsed.sale_date,
+        start_time:      parsed.start_time,
+        end_time:        parsed.end_time,
+        categories:      parsed.categories,
+        sale_type:       'garage_sale',
+        status:          'active',
+        expires_at:      expiresAt,
       });
       inserted++;
     } catch (err) {
-      console.error(`[craigslist] ${sub}: failed to process item —`, err.message);
+      console.error(`[craigslist] ${sub}: item error —`, err.message);
       errors++;
     }
   }
 
-  console.log(`[craigslist] ${sub} (${city}, ${state}): ${inserted} listings, ${errors} errors`);
+  console.log(`[craigslist] ${sub}: ${inserted} listings, ${errors} errors`);
   return { inserted, errors };
 }
 
-/**
- * Refresh all configured Craigslist cities.
- */
 export async function refreshAll() {
-  let total = 0;
-  let totalErrors = 0;
+  let total = 0, totalErrors = 0;
   for (const cfg of CRAIGSLIST_CITIES) {
     const { inserted, errors } = await refreshCity(cfg);
     total += inserted;
     totalErrors += errors;
-    // Be polite — wait 1s between cities
-    await sleep(1000);
+    await sleep(2000);
   }
   return { total, totalErrors };
 }
 
-// ---------- Helpers ----------
-
-function stripHtml(html) {
-  return (html || '')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function cleanTitle(t) {
-  // Craigslist often suffixes price/area like " - $0 (Citrus Heights)" — keep it but truncate
-  return (t || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-}
-
-function hashId(s) {
-  // Tiny non-crypto hash — enough for de-dup
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  return 'cl_' + (h >>> 0).toString(16);
-}
-
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const sleep = ms => new Promise(r => setTimeout(r, ms));

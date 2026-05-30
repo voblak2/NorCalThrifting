@@ -1,13 +1,13 @@
-// refresh.js — Run every configured scraper once and exit.
+// refresh.js — Run every configured scraper once.
 //
 // Usage:
 //   npm run refresh        # one-shot run
 //   node refresh.js        # same thing
 //
-// The server (server.js) also schedules this via node-cron so you don't
-// need to invoke this manually in production.
+// The server (server.js) also calls refreshAll() via a nightly cron job.
 
 import 'dotenv/config';
+import { fileURLToPath } from 'url';
 import { refreshAll as refreshCraigslist } from './scrapers/craigslist.js';
 import { refreshAll as refreshEstateSales } from './scrapers/estatesales.js';
 import { deleteExpired, countSales } from './db.js';
@@ -27,11 +27,12 @@ export async function refreshAll() {
 
   const after = countSales();
   console.log(`[refresh] done. DB went from ${before} to ${after} sales.`);
-  return { before, after, craigslist: cl, estatesales: es };
+  return { before, after };
 }
 
-// Run if invoked directly (not imported)
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run if invoked directly (not imported).
+// fileURLToPath normalizes the URL to an OS path (handles Windows backslashes).
+if (fileURLToPath(import.meta.url) === process.argv[1]) {
   refreshAll()
     .then(() => process.exit(0))
     .catch(err => {
