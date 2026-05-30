@@ -14,9 +14,9 @@ import { deleteExpired, countSales } from './db.js';
 
 export async function refreshAll() {
   console.log(`[refresh] starting at ${new Date().toISOString()}`);
-  const before = countSales();
+  const before = await countSales();
 
-  const expired = deleteExpired();
+  const expired = await deleteExpired();
   if (expired > 0) console.log(`[refresh] removed ${expired} expired sales`);
 
   const cl = await refreshCraigslist();
@@ -25,7 +25,7 @@ export async function refreshAll() {
   const es = await refreshEstateSales();
   console.log(`[refresh] estatesales: ${es.total} listings (${es.totalErrors} errors)`);
 
-  const after = countSales();
+  const after = await countSales();
   console.log(`[refresh] done. DB went from ${before} to ${after} sales.`);
   return { before, after };
 }
