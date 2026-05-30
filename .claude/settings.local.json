@@ -39,7 +39,8 @@
       "Bash(Out-Null)",
       "Bash(Copy-Item \"C:\\\\Users\\\\Vince\\\\.claude\\\\projects\\\\c--Projects-GarageSaleFinder\\\\memory\\\\*\" \"C:\\\\Users\\\\Vince\\\\.claude\\\\projects\\\\c--Projects-NorCalThrifting\\\\memory\\\\\" -Recurse)",
       "Bash(git remote *)",
-      "Bash(node --input-type=module)"
+      "Bash(node --input-type=module)",
+      "Bash(node --check server.js)"
     ]
   }
 }
