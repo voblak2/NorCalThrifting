@@ -68,13 +68,13 @@ app.use('/api/favorites', favoritesRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', uploadsRoutes);
 
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, sales: countSales(), now: new Date().toISOString() });
+app.get('/api/health', async (req, res) => {
+  res.json({ ok: true, sales: await countSales(), now: new Date().toISOString() });
 });
 
-app.get('/api/sales', (req, res) => {
+app.get('/api/sales', async (req, res) => {
   try {
-    const sales = searchSales({
+    const sales = await searchSales({
       q:         req.query.q,
       city:      req.query.city,
       state:     req.query.state,
@@ -92,8 +92,8 @@ app.get('/api/sales', (req, res) => {
   }
 });
 
-app.get('/api/sales/:id', (req, res) => {
-  const sale = getSaleById(parseInt(req.params.id));
+app.get('/api/sales/:id', async (req, res) => {
+  const sale = await getSaleById(parseInt(req.params.id));
   if (!sale) return res.status(404).json({ error: 'not_found' });
   res.set('Cache-Control', 'public, max-age=300');
   res.json({ sale });
@@ -123,7 +123,7 @@ app.post('/api/sales', submitLimiter, requireAuth, async (req, res) => {
     });
 
     const expires = addDays(body.sale_date, 1);
-    const result = upsertSale({
+    const result = await upsertSale({
       source: 'submission',
       source_url: null,
       source_id: 'sub_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
@@ -166,9 +166,9 @@ if (cron.validate(schedule)) {
   console.warn(`[cron] invalid CRON_SCHEDULE "${schedule}" — auto-refresh disabled`);
 }
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`NorCal Thrifting API listening on http://localhost:${PORT}`);
-  console.log(`  ${countSales()} sales currently in DB`);
+  console.log(`  ${await countSales()} sales currently in DB`);
 });
 
 // ---------- Helpers ----------

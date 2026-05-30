@@ -20,3 +20,7 @@ services:
         value: https://norcalthrifting.com,https://www.norcalthrifting.com
       - key: CRON_SCHEDULE
         value: 0 6 * * *
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false

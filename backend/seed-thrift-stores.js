@@ -71,7 +71,7 @@ for (const store of STORES) {
     console.log(`${g.lat.toFixed(4)}, ${g.lng.toFixed(4)}`);
   }
 
-  upsertSale({
+  await upsertSale({
     source:          'directory',
     source_url:      null,
     source_id:       makeId(store.name, store.address, store.city),

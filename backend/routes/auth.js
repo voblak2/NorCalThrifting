@@ -49,7 +49,7 @@ router.post('/signup', async (req, res) => {
   try {
     const passwordHash = await bcrypt.hash(password, 12);
     const role = ADMIN_EMAILS.has(email.toLowerCase()) ? 'admin' : 'customer';
-    const user = createUser({ name: name.trim(), email, passwordHash, role });
+    const user = await createUser({ name: name.trim(), email, passwordHash, role });
     const token = signToken({ id: user.id, email: user.email, name: user.name, role: user.role });
     res.cookie('nct_token', token, COOKIE_OPTS);
     res.status(201).json({ user: publicUser(user) });
@@ -67,7 +67,7 @@ router.post('/signin', async (req, res) => {
 
   if (!email || !password) return res.status(400).json({ error: 'missing_fields' });
 
-  const user = getUserByEmail(email);
+  const user = await getUserByEmail(email);
   if (!user) return res.status(401).json({ error: 'invalid_credentials' });
 
   const valid = await bcrypt.compare(password, user.password_hash);
@@ -87,8 +87,8 @@ router.post('/signout', (req, res) => {
 
 // ─── Current session ──────────────────────────────────────────────────────────
 
-router.get('/me', requireAuth, (req, res) => {
-  const user = getUserById(req.user.id);
+router.get('/me', requireAuth, async (req, res) => {
+  const user = await getUserById(req.user.id);
   if (!user) {
     res.clearCookie('nct_token', { path: '/' });
     return res.status(401).json({ error: 'user_not_found' });

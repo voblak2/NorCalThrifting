@@ -9,21 +9,21 @@ import { getFavoriteIds, addFavorite, removeFavorite, hasFavorite } from '../db.
 
 const router = Router();
 
-router.get('/', requireAuth, (req, res) => {
-  const ids = getFavoriteIds(req.user.id);
+router.get('/', requireAuth, async (req, res) => {
+  const ids = await getFavoriteIds(req.user.id);
   res.json({ ids });
 });
 
-router.post('/:saleId', requireAuth, (req, res) => {
+router.post('/:saleId', requireAuth, async (req, res) => {
   const saleId = parseInt(req.params.saleId);
   if (!saleId || isNaN(saleId)) return res.status(400).json({ error: 'invalid_sale_id' });
 
-  const already = hasFavorite(req.user.id, saleId);
+  const already = await hasFavorite(req.user.id, saleId);
   if (already) {
-    removeFavorite(req.user.id, saleId);
+    await removeFavorite(req.user.id, saleId);
     res.json({ favorited: false });
   } else {
-    addFavorite(req.user.id, saleId);
+    await addFavorite(req.user.id, saleId);
     res.json({ favorited: true });
   }
 });
