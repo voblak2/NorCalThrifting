@@ -341,5 +341,64 @@ export function hasFavorite(userId, saleId) {
   return found;
 }
 
+// ---------- Admin ----------
+
+export function getAdminSales({ status = null, limit = 200 } = {}) {
+  const where = [`(expires_at IS NULL OR expires_at >= date('now'))`];
+  const params = {};
+  if (status && status !== 'all') {
+    where.push(`status = :status`);
+    params[':status'] = status;
+  }
+  const sql = `
+    SELECT * FROM sales
+    WHERE ${where.join(' AND ')}
+    ORDER BY
+      CASE WHEN status = 'pending' THEN 0 ELSE 1 END,
+      created_at DESC
+    LIMIT ${Math.min(parseInt(limit) || 200, 500)}
+  `;
+  const stmt = dbInstance.prepare(sql);
+  stmt.bind(params);
+  const rows = [];
+  while (stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+  return rows.map(deserialize);
+}
+
+export function updateSaleStatus(id, status) {
+  dbInstance.run(`UPDATE sales SET status = :status WHERE id = :id`, { ':status': status, ':id': id });
+  persist();
+}
+
+export function getAllUsers() {
+  const stmt = dbInstance.prepare(
+    `SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC`
+  );
+  const rows = [];
+  while (stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+  return rows;
+}
+
+export function updateUserRole(userId, role) {
+  dbInstance.run(`UPDATE users SET role = :role WHERE id = :id`, { ':role': role, ':id': userId });
+  persist();
+}
+
+export function countPendingSales() {
+  const result = dbInstance.exec(
+    `SELECT COUNT(*) as n FROM sales WHERE status = 'pending' AND (expires_at IS NULL OR expires_at >= date('now'))`
+  );
+  return result[0]?.values[0]?.[0] ?? 0;
+}
+
+export function getLastScraperRun() {
+  const result = dbInstance.exec(
+    `SELECT MAX(created_at) as last_run FROM sales WHERE source != 'submission'`
+  );
+  return result[0]?.values[0]?.[0] ?? null;
+}
+
 // Export the underlying connection for advanced use (matches the old export name)
 export const db = dbInstance;

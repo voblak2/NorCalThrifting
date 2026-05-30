@@ -21,10 +21,10 @@ import cookieParser from 'cookie-parser';
 import cron from 'node-cron';
 import { searchSales, getSaleById, upsertSale, countSales } from './db.js';
 import { geocode } from './geocode.js';
-import { refreshAll } from './refresh.js';
-import { requireAuth, requireAdmin, optionalAuth } from './auth.js';
+import { requireAuth } from './auth.js';
 import authRoutes from './routes/auth.js';
 import favoritesRoutes from './routes/favorites.js';
+import adminRoutes from './routes/admin.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT) || 3001;
@@ -52,6 +52,7 @@ app.use((req, res, next) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/favorites', favoritesRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, sales: countSales(), now: new Date().toISOString() });
@@ -133,19 +134,6 @@ app.post('/api/sales', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[api] submit error:', err);
     res.status(500).json({ error: 'submit_failed' });
-  }
-});
-
-/**
- * Manual scraper trigger. Requires admin role.
- */
-app.post('/api/admin/refresh', requireAdmin, async (req, res) => {
-  try {
-    const result = await refreshAll();
-    res.json({ ok: true, result });
-  } catch (err) {
-    console.error('[api] refresh error:', err);
-    res.status(500).json({ error: 'refresh_failed', message: err.message });
   }
 });
 
