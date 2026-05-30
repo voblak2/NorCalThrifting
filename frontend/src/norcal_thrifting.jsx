@@ -8,7 +8,9 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
 // ─── Backend configuration ─────────────────────────────────────────────────
-const API_URL = '/api';
+// In dev, Vite proxies /api → localhost:3001. In production set VITE_API_URL
+// to the Render backend URL (e.g. https://norcal-thrifting-api.onrender.com/api).
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // ─── Bundled fallback data ─────────────────────────────────────────────────
 const SAMPLE_SALES = [

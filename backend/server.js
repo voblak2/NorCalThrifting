@@ -18,6 +18,7 @@ import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
 import cron from 'node-cron';
 import { searchSales, getSaleById, upsertSale, countSales } from './db.js';
 import { geocode } from './geocode.js';
@@ -30,6 +31,15 @@ import { refreshAll } from './refresh.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT) || 3001;
+
+// 5 sale submissions per IP per hour — prevents spam from authenticated accounts
+const submitLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: 'too_many_submissions' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // ---------- Middleware ----------
 
@@ -92,7 +102,7 @@ app.get('/api/sales/:id', (req, res) => {
 /**
  * Submit a new sale. Requires an authenticated user account.
  */
-app.post('/api/sales', requireAuth, async (req, res) => {
+app.post('/api/sales', submitLimiter, requireAuth, async (req, res) => {
   const body = req.body || {};
   const required = ['title', 'address', 'city', 'state', 'sale_date'];
   const missing = required.filter(k => !body[k]);

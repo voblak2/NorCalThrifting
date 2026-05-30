@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: norcal-thrifting-api
+    env: node
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 30d
+      - key: ADMIN_EMAILS
+        value: voblak2@gmail.com
+      - key: ALLOWED_ORIGINS
+        value: https://norcalthrifting.com,https://www.norcalthrifting.com
+      - key: CRON_SCHEDULE
+        value: 0 6 * * *
