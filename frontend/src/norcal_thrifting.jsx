@@ -265,7 +265,7 @@ export default function NorCalThrifting() {
       minHeight: "100vh",
       background: "linear-gradient(180deg, #FBF5EC 0%, #F5EDDF 100%)",
       fontFamily: "'Nunito', system-ui, sans-serif",
-      color: "#3D2E26", paddingBottom: "80px",
+      color: "#3D2E26",
     }}>
       {/* Paper grain */}
       <div style={{
@@ -704,6 +704,14 @@ export default function NorCalThrifting() {
           onClose={() => setShowAuth(false)}
         />
       )}
+
+      <footer style={{
+        textAlign: "center", padding: "24px 16px",
+        fontSize: "13px", color: "#A08060",
+        borderTop: "1px solid #E8DCC8", marginTop: "40px",
+      }}>
+        © {new Date().getFullYear()} NorCal Thrifting. All rights reserved.
+      </footer>
 
       <style>{`
         @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
