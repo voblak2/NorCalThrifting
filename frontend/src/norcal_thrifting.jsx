@@ -11,6 +11,10 @@ import L from 'leaflet';
 // In dev, Vite proxies /api → localhost:3001. In production set VITE_API_URL
 // to the Render backend URL (e.g. https://norcal-thrifting-api.onrender.com/api).
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+// Uploaded photo paths come back from the API as host-relative ("/uploads/x.jpg").
+// They live on the backend, not the frontend's own origin, so resolve them against
+// the API's host whenever VITE_API_URL points at a different domain (e.g. Vercel + Render).
+const API_ORIGIN = API_URL.startsWith('http') ? new URL(API_URL).origin : '';
 
 // ─── Bundled fallback data ─────────────────────────────────────────────────
 const SAMPLE_SALES = [
@@ -589,7 +593,7 @@ export default function NorCalThrifting() {
 
             {sale.photo_urls && sale.photo_urls.length > 0 && (
               <div style={{ margin: "-22px -22px 16px", height: "200px", position: "relative", flexShrink: 0 }}>
-                <img src={sale.photo_urls[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img src={`${API_ORIGIN}${sale.photo_urls[0]}`} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 {sale.photo_urls.length > 1 && (
                   <span style={{
                     position: "absolute", bottom: "8px", right: "8px",

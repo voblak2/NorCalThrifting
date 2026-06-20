@@ -32,6 +32,10 @@ import { refreshAll } from './refresh.js';
 const app = express();
 const PORT = parseInt(process.env.PORT) || 3001;
 
+// Render sits behind a reverse proxy; trust its single hop so express-rate-limit
+// reads the real client IP from X-Forwarded-For instead of bucketing everyone together.
+app.set('trust proxy', 1);
+
 // 5 sale submissions per IP per hour — prevents spam from authenticated accounts
 const submitLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
