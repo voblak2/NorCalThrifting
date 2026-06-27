@@ -1,29 +1,32 @@
 # NorCal Thrifting
 
-A full-stack web app that aggregates garage sales, estate sales, thrift stores, flea markets, swap meets, and other secondhand finds across Sacramento, the Central Valley, and Northern California — with a warm, editorial UI for searching and saving the ones worth visiting.
+A full-stack web app that aggregates garage sales, estate sales, and thrift stores across Sacramento, the Central Valley, and Northern California — with a warm, editorial UI for searching, mapping, and saving the ones worth visiting.
 
-![NorCal Thrifting](https://img.shields.io/badge/stack-React%20%2B%20Node.js-A8542C?style=flat-square) ![SQLite](https://img.shields.io/badge/database-SQLite%20(sql.js)-6B5444?style=flat-square) ![License](https://img.shields.io/badge/license-MIT-7A8B6F?style=flat-square)
+Live at **[norcalthrifting.com](https://norcalthrifting.com)**.
+
+![NorCal Thrifting](https://img.shields.io/badge/stack-React%20%2B%20Node.js-A8542C?style=flat-square) ![Database](https://img.shields.io/badge/database-Turso%20(libSQL)-6B5444?style=flat-square) ![License](https://img.shields.io/badge/license-MIT-7A8B6F?style=flat-square)
 
 ---
 
 ## What it does
 
 **Backend**
-- Scrapes Craigslist RSS feeds (`gms` category) for NorCal cities (Sacramento, Stockton, Fresno, Chico, Bakersfield)
-- Scrapes EstateSales.net for structured estate sale listings in CA cities
+- Scrapes Craigslist (HTML) and EstateSales.net (JSON-LD) for NorCal cities
 - Parses free-text listing bodies to extract dates, times, ZIP codes, and categories
 - Geocodes every sale to lat/lng using the free U.S. Census Geocoder
-- Stores everything in SQLite — no external database required
-- Accepts community-submitted sales via a public REST endpoint
-- Auto-refreshes on a configurable cron schedule (default: 6 AM daily)
+- Stores everything in **Turso** (cloud-hosted libSQL/SQLite)
+- JWT auth (httpOnly cookie) with signup/signin and an admin role
+- Accepts community-submitted sales via a rate-limited REST endpoint (5/hour/IP, requires sign-in)
+- Accepts photo uploads on submissions (multer + sharp, 5 photos/8MB max)
+- Auto-refreshes scrapers on a configurable cron schedule (default: 6 AM daily)
 - Auto-expires old listings so results stay current
 
 **Frontend**
 - Warm, editorial design with a paper-grain texture and serif typography
-- Live search with 250 ms debounce — queries the backend as you type
-- Filter by state; sort by date or city
-- Save/heart listings for a personal shortlist
-- "Add a Sale" modal to submit community listings directly to the database
+- Live search with 250 ms debounce, advanced filters (date range, sale type, "open now", quick chips)
+- Map view (react-leaflet + OpenStreetMap) alongside the list view
+- Sign up / sign in, persistent favorites, "Add a Sale" submission modal with photo upload
+- Admin dashboard: stats, listings management, user role management, manual scraper trigger
 - Opens any listing in Google Maps with one click
 - Gracefully falls back to bundled sample listings if the backend is unreachable
 
@@ -34,12 +37,12 @@ A full-stack web app that aggregates garage sales, estate sales, thrift stores, 
 NorCal Thrifting is intentionally local. The competitive advantage over national aggregators like gsalr.com is community and geography — a Sacramento-branded site with real NorCal coverage is more useful and more defensible than another national scraper.
 
 Current and planned sources:
-- **Garage sales** — Craigslist RSS (live)
-- **Estate sales** — EstateSales.net HTML scraper (live)
-- **Thrift stores** — directory listings (planned)
+- **Garage sales** — Craigslist scraper (live)
+- **Estate sales** — EstateSales.net scraper (live)
+- **Thrift stores** — directory of 34 verified NorCal stores: Goodwill, Salvation Army, Habitat ReStore (live)
 - **Flea markets & swap meets** — directory listings (planned)
 - **Church, library & community sales** — community submissions (planned)
-- **Find of the Day** — user-posted photos of great finds (planned)
+- **Find of the Day** — user-posted photos of great finds (planned — most differentiated long-term feature)
 
 ---
 
@@ -47,12 +50,15 @@ Current and planned sources:
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18, Vite 5, Lucide React |
+| Frontend | React 18, Vite 8, react-leaflet 4 (map), Lucide React |
 | Backend | Node.js 20+, Express 4 |
-| Database | SQLite via sql.js (pure JS — no native compilation needed) |
-| Scraping | Craigslist RSS (rss-parser), EstateSales.net (cheerio) |
+| Database | Turso (libSQL/SQLite cloud) via `@libsql/client` |
+| Auth | bcryptjs + jsonwebtoken, httpOnly cookie, 30-day JWT |
+| Photo uploads | multer + sharp |
+| Scraping | Craigslist (axios + cheerio), EstateSales.net (axios + cheerio, JSON-LD) |
 | Geocoding | U.S. Census Geocoder (free, no API key required) |
 | Scheduling | node-cron |
+| Hosting | Render (backend), Vercel (frontend) |
 
 All data sources and hosting targets are free. No paid APIs in use.
 
@@ -63,21 +69,27 @@ All data sources and hosting targets are free. No paid APIs in use.
 ```
 NorCalThrifting/
 ├── backend/
-│   ├── server.js             → Express app, routes, cron scheduling
-│   ├── db.js                 → SQLite schema & query helpers
-│   ├── parser.js             → Free-text → structured data (date, time, ZIP, categories)
-│   ├── geocode.js            → U.S. Census geocoder client
-│   ├── refresh.js            → Runs all scrapers once
-│   ├── seed.js               → Inserts sample listings
-│   ├── .env.example          → Copy to .env and configure
-│   ├── data/
-│   │   └── sales.db          → SQLite database (gitignored)
+│   ├── server.js               → Express app, routes, cron scheduling
+│   ├── db.js                   → Turso/libSQL schema & query helpers (async)
+│   ├── auth.js                 → JWT signing/verification, requireAuth/requireAdmin
+│   ├── parser.js                → Free-text → structured data (date, time, ZIP, categories)
+│   ├── geocode.js               → U.S. Census geocoder client
+│   ├── refresh.js               → Runs all scrapers once
+│   ├── seed.js                  → Inserts sample listings
+│   ├── seed-thrift-stores.js    → Seeds the 34-store thrift directory
+│   ├── routes/
+│   │   ├── auth.js              → signup / signin / signout / me
+│   │   ├── favorites.js         → list / toggle favorites
+│   │   ├── admin.js             → stats / sales / users / manual refresh
+│   │   └── uploads.js           → photo upload endpoint
+│   ├── .env.example             → Copy to .env and configure
 │   └── scrapers/
-│       ├── craigslist.js     → RSS feeds for NorCal cities
-│       └── estatesales.js    → HTML scraping for CA cities
+│       ├── craigslist.js        → HTML scraping for NorCal cities
+│       └── estatesales.js       → JSON-LD scraping for CA cities
 └── frontend/
     ├── index.html
-    ├── vite.config.js        → Dev proxy: /api → localhost:3001
+    ├── vite.config.js           → Dev proxy: /api → localhost:3001
+    ├── vercel.json               → Vercel deployment config
     └── src/
         ├── main.jsx
         └── norcal_thrifting.jsx → Single-file React app
@@ -90,6 +102,7 @@ NorCalThrifting/
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) v20 or later
+- A free [Turso](https://turso.tech) account and database (or omit the Turso env vars for a local SQLite file)
 
 ### First-time setup (after cloning)
 
@@ -106,7 +119,7 @@ cd C:\Projects\NorCalThrifting\frontend
 npm install
 ```
 
-The `.env` file defaults work for local development. Before going live, set `ADMIN_TOKEN` to a strong random string.
+Edit `backend/.env` — at minimum set a real `JWT_SECRET`. Turso vars are optional for local dev: omitting them falls back to a local `file:./data/sales.db`.
 
 ### Running the app
 
@@ -132,34 +145,20 @@ Then open **`http://localhost:5173`** in your browser.
 
 ### Populate with data
 
-The database starts empty on a fresh clone. You have two options:
+The database starts empty on a fresh clone. You have three options, which can be combined:
 
 ```powershell
-# Option A — load sample listings instantly
 cd C:\Projects\NorCalThrifting\backend
+
+# Option A — load sample listings instantly
 npm run seed
 
 # Option B — scrape live listings from Craigslist + EstateSales.net
 npm run refresh
+
+# Option C — seed the thrift store directory (34 verified NorCal stores)
+node seed-thrift-stores.js
 ```
-
-### Restarting after closing VS Code (same machine)
-
-Since `node_modules`, `.env`, and the database all stay on your local machine and are not pushed to GitHub, you only need to start the servers again — no reinstall required.
-
-**Terminal 1:**
-```powershell
-cd C:\Projects\NorCalThrifting\backend
-npm run dev
-```
-
-**Terminal 2:**
-```powershell
-cd C:\Projects\NorCalThrifting\frontend
-npm run dev
-```
-
-Open `http://localhost:5173`. Done.
 
 ---
 
@@ -171,9 +170,18 @@ Copy `backend/.env.example` to `backend/.env` and adjust as needed:
 |---|---|---|
 | `PORT` | `3001` | Port the Express server listens on |
 | `ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Comma-separated CORS origins, or `*` |
-| `DB_PATH` | `./data/sales.db` | Path to the SQLite database file |
-| `ADMIN_TOKEN` | `changeme` | Secret required for `POST /api/admin/refresh` |
-| `CRON_SCHEDULE` | `0 6 * * *` | Cron expression for automatic refresh (6 AM daily) |
+| `TURSO_DATABASE_URL` | — | `libsql://...` from the Turso dashboard. Omit (with `TURSO_AUTH_TOKEN`) to use a local `file:./data/sales.db` instead |
+| `TURSO_AUTH_TOKEN` | — | Auth token from the Turso dashboard. Not needed for `file:` URLs |
+| `JWT_SECRET` | *(insecure dev fallback)* | **Required in production.** Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `JWT_EXPIRES_IN` | `30d` | JWT lifetime |
+| `ADMIN_EMAILS` | — | Comma-separated emails auto-granted the admin role on sign-up |
+| `CRON_SCHEDULE` | `0 6 * * *` | Cron expression for automatic scraper refresh |
+
+Frontend (`frontend/.env`, see `frontend/.env.example`):
+
+| Variable | Default | Description |
+|---|---|---|
+| `VITE_API_URL` | `/api` (dev proxy) | Set to the deployed backend URL in production, e.g. `https://norcal-thrifting-api.onrender.com/api` |
 
 ---
 
@@ -182,7 +190,7 @@ Copy `backend/.env.example` to `backend/.env` and adjust as needed:
 ### `GET /api/health`
 Liveness check.
 ```json
-{ "ok": true, "sales": 142, "now": "2026-05-15T12:00:00Z" }
+{ "ok": true, "sales": 434, "now": "2026-06-27T23:00:00Z" }
 ```
 
 ### `GET /api/sales`
@@ -196,65 +204,61 @@ Search and list sales. All query params are optional.
 | `zip` | string | Exact 5-digit ZIP |
 | `from` | YYYY-MM-DD | Only sales on or after this date |
 | `to` | YYYY-MM-DD | Only sales on or before this date |
+| `sale_type` | string | e.g. `garage_sale`, `estate_sale`, `thrift_store` |
 | `limit` | number | Results per page, 1–500 (default 100) |
-
-```json
-{
-  "count": 3,
-  "sales": [
-    {
-      "id": 1,
-      "source": "craigslist",
-      "source_url": "https://sacramento.craigslist.org/...",
-      "title": "Multi-Family Garage Sale",
-      "description": "Tons of stuff...",
-      "address": null,
-      "address_visible": false,
-      "city": "Sacramento",
-      "state": "CA",
-      "zip": "95825",
-      "lat": 38.5816,
-      "lng": -121.4944,
-      "sale_date": "2026-05-17",
-      "start_time": "08:00",
-      "end_time": "14:00",
-      "categories": ["Furniture", "Vintage"],
-      "expires_at": "2026-05-31"
-    }
-  ]
-}
-```
 
 ### `GET /api/sales/:id`
 Returns a single sale by ID. 404 if not found.
 
 ### `POST /api/sales`
-Submit a community listing. No authentication required.
+Submit a community listing. Requires sign-in; rate-limited to 5 submissions/hour/IP.
 
-Required fields: `title`, `address`, `city`, `state`, `sale_date`
+Required fields: `title`, `address`, `city`, `state`, `sale_date`. Optional: `description`, `start_time`, `end_time`, `categories[]`, `sale_type`, `photo_urls[]` (upload via `/api/uploads` first to get URLs).
 
-```json
-{
-  "title": "Weekend Garage Sale",
-  "address": "123 Elm Street",
-  "city": "Sacramento",
-  "state": "CA",
-  "zip": "95825",
-  "sale_date": "2026-05-24",
-  "start_time": "08:00",
-  "end_time": "14:00",
-  "description": "Furniture, tools, kids clothes",
-  "categories": ["Furniture", "Tools", "Kids"]
-}
-```
+### Auth
 
-### `POST /api/admin/refresh`
-Manually triggers a full scraper run. Requires the `X-Admin-Token` header matching `ADMIN_TOKEN` in `.env`.
+| Endpoint | Description |
+|---|---|
+| `POST /api/auth/signup` | Create an account (`email`, `password`) — sets httpOnly session cookie |
+| `POST /api/auth/signin` | Sign in — sets httpOnly session cookie |
+| `POST /api/auth/signout` | Clears the session cookie |
+| `GET /api/auth/me` | Current signed-in user, or 401 |
 
-```powershell
-Invoke-RestMethod -Method POST http://localhost:3001/api/admin/refresh `
-  -Headers @{ "X-Admin-Token" = "your-secret-here" }
-```
+### Favorites *(requires sign-in)*
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/favorites` | List the current user's favorited sale IDs |
+| `POST /api/favorites/:saleId` | Toggle a favorite on/off |
+
+### Photo uploads *(requires sign-in)*
+
+| Endpoint | Description |
+|---|---|
+| `POST /api/uploads` | Multipart upload, field `photos` (max 5 files, 8MB each) — returns hosted URLs to attach to a submission |
+
+### Admin *(requires admin role)*
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/admin/stats` | Dashboard counts |
+| `GET /api/admin/sales` | List/manage all sales |
+| `PATCH /api/admin/sales/:id` | Edit or change status of a sale |
+| `GET /api/admin/users` | List all users |
+| `PATCH /api/admin/users/:id/role` | Promote/demote a user's role |
+| `POST /api/admin/refresh` | Manually trigger a full scraper run |
+
+---
+
+## Deployment
+
+The live site runs on three free-tier services:
+
+- **Database** — Turso (libSQL cloud), `libsql://norcal-thrifting-voblak2.aws-us-west-2.turso.io`
+- **Backend** — Render, configured via [`render.yaml`](render.yaml). Paste `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` into the Render dashboard env vars (marked `sync: false` in the manifest so they aren't committed)
+- **Frontend** — Vercel, configured via [`frontend/vercel.json`](frontend/vercel.json). Set `VITE_API_URL` to the Render service URL
+- **DNS** — `norcalthrifting.com` (Porkbun) points at Vercel's nameservers
+- **Keep-alive** — Render's free tier spins the backend down after 15 min of inactivity, causing a slow "cold start" on the next request. A GitHub Actions workflow ([`.github/workflows/keepalive.yml`](.github/workflows/keepalive.yml)) pings `/api/health` every 10 minutes to keep it warm
 
 ---
 
@@ -262,13 +266,7 @@ Invoke-RestMethod -Method POST http://localhost:3001/api/admin/refresh `
 
 ### Adding Craigslist cities
 
-Edit [backend/scrapers/craigslist.js](backend/scrapers/craigslist.js) and add entries to `CRAIGSLIST_CITIES`:
-
-```js
-{ sub: 'inlandempire', city: 'Riverside', state: 'CA' },
-```
-
-The subdomain comes from any Craigslist URL (e.g. `inlandempire.craigslist.org`).
+Edit [backend/scrapers/craigslist.js](backend/scrapers/craigslist.js) and add an entry for the new city/subdomain.
 
 ### Adding EstateSales.net cities
 
@@ -278,6 +276,10 @@ Edit [backend/scrapers/estatesales.js](backend/scrapers/estatesales.js) and add 
 { state: 'CA', city: 'Riverside' },       // single-word city
 { state: 'CA', city: 'San-Bernardino' },  // multi-word: use dashes
 ```
+
+### Adding thrift stores / directory entries
+
+Edit [backend/seed-thrift-stores.js](backend/seed-thrift-stores.js) and re-run `node seed-thrift-stores.js`. Upserts on `(source, source_id)`, so it's safe to re-run after edits.
 
 ### Adding a new source entirely
 
@@ -289,31 +291,28 @@ The database's unique constraint on `(source, source_id)` means re-running the s
 
 ---
 
-## Production notes
+## Known gaps / next steps
 
-- **Rate limiting** — Add `express-rate-limit` to `POST /api/sales` before going live. Submissions are currently unauthenticated.
-- **Captcha** — Add hCaptcha or Cloudflare Turnstile to the submission form to prevent spam.
-- **Submission moderation** — Submissions go live immediately. Add an `approved` column and a review UI before opening to the public.
-- **Geocoder** — The U.S. Census Geocoder is free but slow and U.S.-only. For real traffic, swap in Mapbox or Google Geocoding.
-- **Caching** — Add Cloudflare or a reverse proxy in front. Listings change slowly and are well-suited to aggressive caching.
-- **Error tracking** — Hook up Sentry or similar. Scrapers fail silently by design (one broken source shouldn't break the app), but you'll want visibility.
-- **Terms of service** — Craigslist RSS feeds are explicitly published for syndication. EstateSales.net's public listing pages permit automated reading at time of writing. Always verify before deploying.
+- **Photo storage is ephemeral** — `backend/uploads/` is local disk, which Render wipes on every redeploy. Swap for Cloudflare R2 or Backblaze B2 before relying on uploaded photos long-term.
+- **Submission moderation** — community submissions go live immediately. Consider an `approved` column and review UI if spam becomes an issue.
+- **Captcha** — no bot protection on the submission form yet beyond rate limiting and requiring sign-in.
+- **Geocoder** — the U.S. Census Geocoder is free but slow and U.S.-only; fine at current traffic levels.
 
 ---
 
 ## Troubleshooting
 
-**`[craigslist] {city}: feed fetch failed`**
-Craigslist occasionally rate-limits IPs that hit many feeds in quick succession. Increase the `sleep(1000)` delay in `scrapers/craigslist.js` to 2000–5000 ms, or run from a different network.
+**`[craigslist] {city}: feed fetch failed` / rate-limited**
+Craigslist occasionally rate-limits IPs that hit many pages in quick succession. Increase the delay between requests in `scrapers/craigslist.js`, or run from a different network.
 
 **`[estatesales] {city}: 0 cards found — selector may be stale`**
-Their HTML changed. Open the city page in a browser, inspect a sale card, find a stable selector, and update the `cards` query in `scrapers/estatesales.js`.
+Their HTML changed. Open the city page in a browser, inspect a sale card, find a stable selector, and update the scraper.
 
 **Empty results from `GET /api/sales`**
-Run `npm run seed` for instant sample data, or `npm run refresh` for live data. Verify the database exists at `backend/data/sales.db`.
+Run `npm run seed` for instant sample data, or `npm run refresh` for live data.
 
 **Frontend shows "backend API isn't reachable" banner**
-The backend isn't running or isn't on port 3001. Start it with `npm run dev` from the `backend/` folder. The frontend still works with bundled sample data in this state.
+Locally: the backend isn't running, or isn't on port 3001. In production: this is usually a Render free-tier cold start (see [Deployment](#deployment)) — refresh after a few seconds. The frontend still works with bundled sample data in this state.
 
 ---
 
