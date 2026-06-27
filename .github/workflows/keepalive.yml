@@ -1,0 +1,13 @@
+name: Keep Render backend warm
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: curl -sf --max-time 20 https://norcal-thrifting-api.onrender.com/api/health
