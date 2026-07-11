@@ -10,4 +10,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping health endpoint
-        run: curl -sf --max-time 20 https://norcal-thrifting-api.onrender.com/api/health
+        run: curl -sf --max-time 90 https://norcal-thrifting-api.onrender.com/api/health
