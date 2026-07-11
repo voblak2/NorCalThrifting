@@ -99,7 +99,7 @@ export async function refreshCity({ sub, city, state }) {
       }
       // Craigslist hides most addresses, so many listings won't have map pins — that's fine.
 
-      upsertSale({
+      await upsertSale({
         source:          'craigslist',
         source_url:      link,
         source_id:       'cl_' + pid,

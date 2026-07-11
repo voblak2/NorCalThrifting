@@ -80,6 +80,7 @@ export default function NorCalThrifting() {
   const [stateFilter, setStateFilter] = useState("All");
   const [showFilters, setShowFilters] = useState(false);
   const [favorites, setFavorites]   = useState(new Set());
+  const [expandedIds, setExpandedIds] = useState(new Set());
   const [showFaves, setShowFaves]   = useState(false);
   const [sortBy, setSortBy]         = useState("date");
   const [sales, setSales]           = useState(SAMPLE_SALES);
@@ -231,6 +232,15 @@ export default function NorCalThrifting() {
         return next;
       });
     }
+  };
+
+  // ─── Description expand/collapse ───────────────────────────────────────────
+  const toggleExpanded = (id) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   };
 
   // ─── Sign out ─────────────────────────────────────────────────────────────
@@ -568,6 +578,7 @@ export default function NorCalThrifting() {
       <div style={{
         position: "relative", zIndex: 1, maxWidth: "1100px", margin: "0 auto", padding: "0 24px",
         display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "20px",
+        alignItems: "start",
       }}>
         {filtered.length === 0 && !loading && (
           <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "60px 20px",
@@ -655,9 +666,32 @@ export default function NorCalThrifting() {
               )}
             </div>
 
-            <p style={{ fontSize: "14.5px", lineHeight: 1.55, color: "#3D2E26", margin: "0 0 16px", flex: 1 }}>
-              {sale.description}
-            </p>
+            {(() => {
+              const isExpanded = expandedIds.has(sale.id);
+              const isLong = sale.description && sale.description.length > 160;
+              return (
+                <>
+                  <p style={{
+                    fontSize: "14.5px", lineHeight: 1.55, color: "#3D2E26", flex: 1,
+                    margin: isLong ? "0 0 4px" : "0 0 16px",
+                    ...(isLong && !isExpanded
+                      ? { display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }
+                      : {}),
+                  }}>
+                    {sale.description}
+                  </p>
+                  {isLong && (
+                    <button onClick={() => toggleExpanded(sale.id)} style={{
+                      alignSelf: "flex-start", background: "none", border: "none", padding: 0,
+                      margin: "0 0 16px", cursor: "pointer",
+                      color: "#A8542C", fontSize: "13px", fontWeight: 600, textDecoration: "underline",
+                    }}>
+                      {isExpanded ? "Show less" : "Read more"}
+                    </button>
+                  )}
+                </>
+              );
+            })()}
 
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "16px" }}>
               {sale.categories.map(cat => (

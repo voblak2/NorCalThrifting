@@ -146,6 +146,12 @@ async function processSale(saleUrl) {
   const idMatch = saleUrl.match(/\/(\d+)$/);
   const saleId = idMatch ? idMatch[1] : saleUrl;
 
+  // jsonLd.description is a short, "…"-truncated SEO preview, not the real listing
+  // text. The full text lives in a separate Angular transfer-state JSON blob
+  // embedded on the same page — pull that instead, falling back to the JSON-LD
+  // preview if the page structure ever changes.
+  const fullDescription = extractFullDescription(html, saleId) || jsonLd.description || '';
+
   // Geocode using the structured PostalAddress
   let lat = null, lng = null;
   try {
@@ -159,12 +165,12 @@ async function processSale(saleUrl) {
   } catch (_) {}
 
   try {
-    upsertSale({
+    await upsertSale({
       source:          'estatesales',
       source_url:      `${BASE}${saleUrl}`,
       source_id:       `es_${addr.addressRegion}_${addr.postalCode}_${saleId}`,
       title:           (jsonLd.name || '').slice(0, 200),
-      description:     (jsonLd.description || '').slice(0, 800),
+      description:     fullDescription.slice(0, 5000),
       address:         addr.streetAddress || null,
       address_visible: !!addr.streetAddress,
       city:            addr.addressLocality,
@@ -187,6 +193,30 @@ async function processSale(saleUrl) {
 }
 
 // ---------- Helpers ----------
+
+/**
+ * Pull the full (untruncated) plain-text description out of the Angular
+ * transfer-state JSON EstateSales.net embeds on each detail page. This is
+ * undocumented internal app state, not a public API — if it ever disappears
+ * or moves, callers should fall back to jsonLd.description.
+ */
+function extractFullDescription(html, saleId) {
+  try {
+    const marker = '<script id="estatesales-net-state" type="application/json">';
+    const start = html.indexOf(marker);
+    if (start === -1) return null;
+    const jsonStart = start + marker.length;
+    const jsonEnd = html.indexOf('</script>', jsonStart);
+    if (jsonEnd === -1) return null;
+
+    const state = JSON.parse(html.slice(jsonStart, jsonEnd));
+    const entities = state?.NGRX_STATE?.['feature.traditionalSaleViewState']?.entitiesById;
+    const text = entities?.[saleId]?.plainTextDescription;
+    return typeof text === 'string' && text.trim() ? text.trim() : null;
+  } catch (_) {
+    return null;
+  }
+}
 
 /**
  * Convert a UTC ISO datetime string to Pacific local date + time strings.
