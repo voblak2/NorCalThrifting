@@ -141,19 +141,22 @@ export default function NorCalThrifting() {
   const debounceRef = useRef(null);
   const fetchSales = useCallback(async () => {
     setLoading(true);
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (stateFilter && stateFilter !== 'All') params.set('state', stateFilter);
+    if (dateFrom) params.set('from', dateFrom);
+    if (dateTo)   params.set('to',   dateTo);
+    if (saleType) params.set('sale_type', saleType);
+    const url = `${API_URL}/sales?${params.toString()}`;
+    const tryFetch = () => fetch(url, { credentials: 'include', signal: AbortSignal.timeout(4000) })
+      .then(res => { if (!res.ok) throw new Error('bad status'); return res.json(); });
+
     try {
-      const params = new URLSearchParams();
-      if (query) params.set('q', query);
-      if (stateFilter && stateFilter !== 'All') params.set('state', stateFilter);
-      if (dateFrom) params.set('from', dateFrom);
-      if (dateTo)   params.set('to',   dateTo);
-      if (saleType) params.set('sale_type', saleType);
-      const res = await fetch(`${API_URL}/sales?${params.toString()}`, {
-        credentials: 'include',
-        signal: AbortSignal.timeout(4000),
+      // A single retry absorbs brief upstream DB blips instead of falling back to sample data.
+      const data = await tryFetch().catch(async () => {
+        await new Promise(r => setTimeout(r, 1000));
+        return tryFetch();
       });
-      if (!res.ok) throw new Error('bad status');
-      const data = await res.json();
       setSales(data.sales || []);
       setUsingFallback(false);
     } catch {
