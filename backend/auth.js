@@ -23,7 +23,11 @@ export function requireAuth(req, res, next) {
     req.user = jwt.verify(token, secret());
     next();
   } catch {
-    res.clearCookie('nct_token', { path: '/' });
+    res.clearCookie('nct_token', {
+      path: '/',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    });
     res.status(401).json({ error: 'invalid_token' });
   }
 }

@@ -19,9 +19,13 @@ const ADMIN_EMAILS = new Set(
     .split(',').map(e => e.trim().toLowerCase()).filter(Boolean)
 );
 
+// Frontend (Vercel) and backend (Render) live on different domains, so every
+// authenticated fetch is cross-site — SameSite=Lax would silently drop the
+// cookie on all of them except the response that sets it. SameSite=None
+// requires Secure, which is already tied to NODE_ENV=production.
 const COOKIE_OPTS = {
   httpOnly: true,
-  sameSite: 'lax',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   secure: process.env.NODE_ENV === 'production',
   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   path: '/',
@@ -81,7 +85,7 @@ router.post('/signin', async (req, res) => {
 // ─── Sign out ─────────────────────────────────────────────────────────────────
 
 router.post('/signout', (req, res) => {
-  res.clearCookie('nct_token', { path: '/' });
+  res.clearCookie('nct_token', { path: '/', sameSite: COOKIE_OPTS.sameSite, secure: COOKIE_OPTS.secure });
   res.json({ ok: true });
 });
 
@@ -90,7 +94,7 @@ router.post('/signout', (req, res) => {
 router.get('/me', requireAuth, async (req, res) => {
   const user = await getUserById(req.user.id);
   if (!user) {
-    res.clearCookie('nct_token', { path: '/' });
+    res.clearCookie('nct_token', { path: '/', sameSite: COOKIE_OPTS.sameSite, secure: COOKIE_OPTS.secure });
     return res.status(401).json({ error: 'user_not_found' });
   }
   res.json({ user: publicUser(user) });
