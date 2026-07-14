@@ -13,7 +13,7 @@ const client = createClient({
 });
 
 // Schema — all columns declared upfront; IF NOT EXISTS is safe to re-run on every start.
-await client.batch([
+const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS sales (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     source          TEXT    NOT NULL,
@@ -63,7 +63,26 @@ await client.batch([
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
   )`,
-], 'write');
+];
+
+// Turso occasionally 502s transiently; without a retry here, that blip crashes
+// the process before Express can bind to a port, which turns a few seconds of
+// Turso flakiness into a full Render deploy failure.
+async function initSchema(attempts = 5, delayMs = 2000) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await client.batch(SCHEMA, 'write');
+      return;
+    } catch (err) {
+      if (i === attempts) throw err;
+      console.error(`[db] schema init failed (attempt ${i}/${attempts}): ${err.message}. Retrying in ${delayMs}ms...`);
+      await new Promise(r => setTimeout(r, delayMs));
+      delayMs *= 2;
+    }
+  }
+}
+
+await initSchema();
 
 // ---------- Insert / upsert ----------
 
