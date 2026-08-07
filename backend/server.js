@@ -20,7 +20,7 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import cron from 'node-cron';
-import { searchSales, getSaleById, upsertSale, countSales } from './db.js';
+import { searchSales, getSaleById, upsertSale, countSales, getLastScraperRun } from './db.js';
 import { geocode } from './geocode.js';
 import { requireAuth } from './auth.js';
 import authRoutes from './routes/auth.js';
@@ -169,6 +169,24 @@ if (cron.validate(schedule)) {
 } else {
   console.warn(`[cron] invalid CRON_SCHEDULE "${schedule}" — auto-refresh disabled`);
 }
+
+// Render's free tier spins down on idle, which can silently swallow the single
+// daily cron tick above with no catch-up — so also self-heal on boot if the
+// last successful scrape is stale (covers both "process was asleep at 6am"
+// and "this is a fresh deploy that's never run it").
+(async () => {
+  try {
+    const lastRun = await getLastScraperRun();
+    const lastRunMs = lastRun ? new Date(lastRun.replace(' ', 'T') + 'Z').getTime() : null;
+    const staleMs = lastRunMs ? Date.now() - lastRunMs : Infinity;
+    if (staleMs > 20 * 3600_000) {
+      console.log(`[cron] last successful scrape was ${lastRun ?? 'never'} — running catch-up refresh on boot`);
+      refreshAll().catch(err => console.error('[cron] catch-up refresh failed:', err));
+    }
+  } catch (err) {
+    console.error('[cron] catch-up check failed:', err);
+  }
+})();
 
 app.listen(PORT, async () => {
   console.log(`NorCal Thrifting API listening on http://localhost:${PORT}`);

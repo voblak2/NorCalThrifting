@@ -4,9 +4,9 @@
 // regular search results page is server-rendered HTML and works fine with
 // browser-like headers. Cities are trimmed to NorCal / Central Valley only.
 //
-// HTML structure (current as of 2025):
+// HTML structure (current as of 2026-08):
 //   <li class="cl-static-search-result" title="Sale Title">
-//     <a href="/gms/d/city-slug/7919524303.html">
+//     <a href="https://www.craigslist.org/view/d/city-slug/fa3EYSbAAz67kAs9ZHwdbz">
 //       <div class="title">Sale Title</div>
 //       <div class="details">
 //         <div class="price">$0</div>
@@ -14,6 +14,10 @@
 //       </div>
 //     </a>
 //   </li>
+//
+// Craigslist migrated listing URLs from numeric IDs (/gms/d/city-slug/7919524303.html)
+// to opaque alphanumeric IDs (/view/d/city-slug/fa3EYSbAAz67kAs9ZHwdbz) sometime
+// before 2026-08 — extractPostId() below handles both.
 
 import axios from 'axios';
 import * as cheerio from 'cheerio';
@@ -77,9 +81,7 @@ export async function refreshCity({ sub, city, state }) {
 
       const anchor = $el.find('a').first();
       const link = anchor.attr('href') || '';
-      // Extract numeric post ID from URL: /gms/d/city-slug/7919524303.html
-      const pidMatch = link.match(/\/(\d{7,})\.html/);
-      const pid = pidMatch ? pidMatch[1] : null;
+      const pid = extractPostId(link);
       if (!pid) continue;
 
       // Location may be a neighborhood name or a full street address
@@ -139,6 +141,17 @@ export async function refreshAll() {
     await sleep(2000);
   }
   return { total, totalErrors };
+}
+
+// Old format: /gms/d/city-slug/7919524303.html — numeric, .html suffix.
+// New format: /view/d/city-slug/fa3EYSbAAz67kAs9ZHwdbz — opaque alnum, no suffix.
+// The opaque id never contains hyphens (the slug segment before it does), which
+// disambiguates it from the rest of the path.
+function extractPostId(link) {
+  const numeric = link.match(/\/(\d{7,})\.html/);
+  if (numeric) return numeric[1];
+  const last = link.split('?')[0].replace(/\/$/, '').split('/').pop() || '';
+  return /^[A-Za-z0-9]{8,}$/.test(last) ? last : null;
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
