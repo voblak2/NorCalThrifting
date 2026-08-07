@@ -50,11 +50,14 @@ const SAMPLE_SALES = [
     categories: ["Furniture", "Outdoor", "Home Goods"], source: "Facebook Marketplace", address_visible: true },
 ];
 
-const STATES = [
-  "All", "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS",
-  "KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC",
-  "ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"
-];
+// State filter disabled — every listing is CA, so a 50-state dropdown was
+// pure dead weight. Left commented (not deleted) in case coverage ever
+// expands beyond California. Replaced with a City filter (see cityFilter).
+// const STATES = [
+//   "All", "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS",
+//   "KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC",
+//   "ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"
+// ];
 
 function formatDate(s) {
   if (!s) return "Date TBD";
@@ -77,7 +80,9 @@ function initials(name) {
 
 export default function NorCalThrifting() {
   const [query, setQuery]           = useState("");
-  const [stateFilter, setStateFilter] = useState("All");
+  // const [stateFilter, setStateFilter] = useState("All"); // disabled — see STATES comment above
+  const [cityFilter, setCityFilter] = useState("All");
+  const [allCities, setAllCities]   = useState([]); // populated once on mount, independent of active filters — see effect below
   const [showFilters, setShowFilters] = useState(false);
   const [favorites, setFavorites]   = useState(new Set());
   const [expandedIds, setExpandedIds] = useState(new Set());
@@ -115,8 +120,21 @@ export default function NorCalThrifting() {
   };
 
   const activeFilterCount = [
-    stateFilter !== 'All', dateFrom, dateTo, saleType, openNow,
+    cityFilter !== 'All', dateFrom, dateTo, saleType, openNow,
   ].filter(Boolean).length;
+
+  // City filter options — fetched once, unfiltered, so picking a city doesn't
+  // collapse the dropdown down to just that one option on the next render.
+  useEffect(() => {
+    fetch(`${API_URL}/sales?limit=500`, { credentials: 'include' })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!data) return;
+        const cities = [...new Set(data.sales.map(s => s.city).filter(Boolean))].sort();
+        setAllCities(cities);
+      })
+      .catch(() => {});
+  }, []);
 
   // Auth state
   const [user, setUser]         = useState(null);   // null = not logged in
@@ -143,7 +161,8 @@ export default function NorCalThrifting() {
     setLoading(true);
     const params = new URLSearchParams();
     if (query) params.set('q', query);
-    if (stateFilter && stateFilter !== 'All') params.set('state', stateFilter);
+    // if (stateFilter && stateFilter !== 'All') params.set('state', stateFilter); // disabled — see STATES comment above
+    if (cityFilter && cityFilter !== 'All') params.set('city', cityFilter);
     if (dateFrom) params.set('from', dateFrom);
     if (dateTo)   params.set('to',   dateTo);
     if (saleType) params.set('sale_type', saleType);
@@ -168,7 +187,7 @@ export default function NorCalThrifting() {
     } finally {
       setLoading(false);
     }
-  }, [query, stateFilter, dateFrom, dateTo, saleType]);
+  }, [query, cityFilter, dateFrom, dateTo, saleType]);
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
@@ -183,7 +202,8 @@ export default function NorCalThrifting() {
       const q = query.trim().toLowerCase();
       const todayStr = new Date().toISOString().slice(0, 10);
       results = results.filter(s => {
-        if (stateFilter !== "All" && s.state !== stateFilter) return false;
+        // if (stateFilter !== "All" && s.state !== stateFilter) return false; // disabled — see STATES comment above
+        if (cityFilter !== "All" && s.city !== cityFilter) return false;
         if (saleType && s.sale_type && s.sale_type !== saleType) return false;
         if (dateFrom && s.sale_date && s.sale_date < dateFrom) return false;
         if (dateTo   && s.sale_date && s.sale_date > dateTo)   return false;
@@ -214,7 +234,7 @@ export default function NorCalThrifting() {
       results = [...results].sort((a, b) => a.city.localeCompare(b.city));
     }
     return results;
-  }, [sales, usingFallback, query, stateFilter, saleType, dateFrom, dateTo, openNow, showFaves, favorites, sortBy]);
+  }, [sales, usingFallback, query, cityFilter, saleType, dateFrom, dateTo, openNow, showFaves, favorites, sortBy]);
 
   // ─── Favorites ────────────────────────────────────────────────────────────
   const toggleFave = async (id) => {
@@ -476,10 +496,20 @@ export default function NorCalThrifting() {
               marginTop: "16px", paddingTop: "16px", borderTop: "1px dashed #E8DCC8",
               display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "center",
             }}>
+              {/* State filter disabled — every listing is CA, so a 50-state dropdown
+                  was pure dead weight. City filter below replaces it.
               <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", fontWeight: 600 }}>
                 State:
                 <select value={stateFilter} onChange={e => setStateFilter(e.target.value)} style={selectStyle}>
                   {STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+              */}
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", fontWeight: 600 }}>
+                City:
+                <select value={cityFilter} onChange={e => setCityFilter(e.target.value)} style={selectStyle}>
+                  <option value="All">All cities</option>
+                  {allCities.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", fontWeight: 600 }}>
@@ -511,7 +541,7 @@ export default function NorCalThrifting() {
               </label>
               {activeFilterCount > 0 && (
                 <button
-                  onClick={() => { setStateFilter('All'); setDateFrom(''); setDateTo(''); setSaleType(''); setOpenNow(false); }}
+                  onClick={() => { setCityFilter('All'); setDateFrom(''); setDateTo(''); setSaleType(''); setOpenNow(false); }}
                   style={{ background: 'none', border: 'none', color: '#A8542C', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: 0, textDecoration: 'underline' }}
                 >
                   Clear all filters
