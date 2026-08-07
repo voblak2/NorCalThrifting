@@ -852,8 +852,13 @@ function MapView({ sales }) {
                           {sale.city}, {sale.state} · {formatDate(sale.sale_date)}
                         </p>
                         {(sale.start_time || sale.end_time) && (
-                          <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#9A8472' }}>
+                          <p style={{ margin: '0 0 4px', fontSize: '12px', color: '#9A8472' }}>
                             {[formatTime(sale.start_time), formatTime(sale.end_time)].filter(Boolean).join(' – ')}
+                          </p>
+                        )}
+                        {sale.location_approx && (
+                          <p style={{ margin: '0 0 8px', fontSize: '11px', color: '#9A8472', fontStyle: 'italic' }}>
+                            Pin is approximate — exact address not listed
                           </p>
                         )}
                       </>

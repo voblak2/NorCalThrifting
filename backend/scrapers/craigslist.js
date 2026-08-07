@@ -23,7 +23,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { upsertSale } from '../db.js';
 import { parsePost } from '../parser.js';
-import { geocode } from '../geocode.js';
+import { geocode, geocodeApprox } from '../geocode.js';
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -89,17 +89,19 @@ export async function refreshCity({ sub, city, state }) {
 
       const parsed = parsePost(title, {});
 
-      // Geocode strategy: try address if it looks like a street number, else ZIP, else skip.
-      let lat = null, lng = null;
+      // Geocode strategy: precise street match if we have one, else an
+      // approximate city/ZIP-centroid pin (geocode() can't do city/ZIP-only
+      // lookups — see geocodeApprox()'s comment in geocode.js).
+      let lat = null, lng = null, locationApprox = false;
       const hasStreetNum = /^\d{2,5}\s+\w/.test(location);
       if (hasStreetNum) {
         const g = await geocode({ address: location, city, state });
         if (g) { lat = g.lat; lng = g.lng; }
-      } else if (parsed.zip) {
-        const g = await geocode({ city, state, zip: parsed.zip });
-        if (g) { lat = g.lat; lng = g.lng; }
       }
-      // Craigslist hides most addresses, so many listings won't have map pins — that's fine.
+      if (lat == null) {
+        const g = await geocodeApprox({ city, state, zip: parsed.zip });
+        if (g) { lat = g.lat; lng = g.lng; locationApprox = true; }
+      }
 
       await upsertSale({
         source:          'craigslist',
@@ -109,6 +111,7 @@ export async function refreshCity({ sub, city, state }) {
         description:     '',
         address:         hasStreetNum ? location : null,
         address_visible: hasStreetNum,
+        location_approx: locationApprox,
         city:            hasStreetNum ? city : (location || city),
         state,
         zip:             parsed.zip,

@@ -19,7 +19,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { upsertSale } from '../db.js';
-import { geocode } from '../geocode.js';
+import { geocode, geocodeApprox } from '../geocode.js';
 
 const BASE = 'https://www.estatesales.net';
 const HEADERS = {
@@ -152,8 +152,11 @@ async function processSale(saleUrl) {
   // preview if the page structure ever changes.
   const fullDescription = extractFullDescription(html, saleId) || jsonLd.description || '';
 
-  // Geocode using the structured PostalAddress
-  let lat = null, lng = null;
+  // Geocode using the structured PostalAddress. Many listings withhold the
+  // exact street address until the sale day (addr.streetAddress missing) —
+  // fall back to an approximate city/ZIP-centroid pin in that case (see
+  // geocodeApprox()'s comment in geocode.js for why geocode() can't do this).
+  let lat = null, lng = null, locationApprox = false;
   try {
     const g = await geocode({
       address: addr.streetAddress,
@@ -163,6 +166,12 @@ async function processSale(saleUrl) {
     });
     if (g) { lat = g.lat; lng = g.lng; }
   } catch (_) {}
+  if (lat == null) {
+    try {
+      const g = await geocodeApprox({ city: addr.addressLocality, state: addr.addressRegion, zip: addr.postalCode });
+      if (g) { lat = g.lat; lng = g.lng; locationApprox = true; }
+    } catch (_) {}
+  }
 
   try {
     await upsertSale({
@@ -173,6 +182,7 @@ async function processSale(saleUrl) {
       description:     fullDescription.slice(0, 5000),
       address:         addr.streetAddress || null,
       address_visible: !!addr.streetAddress,
+      location_approx: locationApprox,
       city:            addr.addressLocality,
       state:           addr.addressRegion,
       zip:             addr.postalCode,

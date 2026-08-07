@@ -32,6 +32,7 @@ const SCHEMA = [
     end_time        TEXT,
     categories      TEXT    NOT NULL DEFAULT '[]',
     address_visible INTEGER NOT NULL DEFAULT 1,
+    location_approx INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
     expires_at      TEXT,
     posted_by       INTEGER,
@@ -84,6 +85,15 @@ async function initSchema(attempts = 5, delayMs = 2000) {
 
 await initSchema();
 
+// CREATE TABLE IF NOT EXISTS above doesn't add new columns to a table that
+// already exists — needed once when location_approx was introduced, and
+// harmless (swallows "duplicate column") on every boot after.
+try {
+  await client.execute(`ALTER TABLE sales ADD COLUMN location_approx INTEGER NOT NULL DEFAULT 0`);
+} catch (err) {
+  if (!/duplicate column/i.test(err.message)) throw err;
+}
+
 // ---------- Insert / upsert ----------
 
 export async function upsertSale(sale) {
@@ -92,8 +102,8 @@ export async function upsertSale(sale) {
       INSERT INTO sales (
         source, source_url, source_id, title, description, address,
         city, state, zip, lat, lng, sale_date, start_time, end_time,
-        categories, address_visible, expires_at, sale_type, status, posted_by, photo_urls
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        categories, address_visible, location_approx, expires_at, sale_type, status, posted_by, photo_urls
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(source, source_id) DO UPDATE SET
         title=excluded.title,
         description=excluded.description,
@@ -108,6 +118,7 @@ export async function upsertSale(sale) {
         end_time=excluded.end_time,
         categories=excluded.categories,
         address_visible=excluded.address_visible,
+        location_approx=excluded.location_approx,
         expires_at=excluded.expires_at,
         sale_type=excluded.sale_type,
         status=excluded.status`,
@@ -128,6 +139,7 @@ export async function upsertSale(sale) {
       sale.end_time         ?? null,
       JSON.stringify(sale.categories  ?? []),
       sale.address_visible === false ? 0 : 1,
+      sale.location_approx === true ? 1 : 0,
       sale.expires_at       ?? null,
       sale.sale_type        ?? 'garage_sale',
       sale.status           ?? 'active',
@@ -234,6 +246,7 @@ function deserialize(row) {
     end_time:        row.end_time,
     categories:      JSON.parse(row.categories  || '[]'),
     address_visible: !!row.address_visible,
+    location_approx: !!row.location_approx,
     created_at:      row.created_at,
     expires_at:      row.expires_at,
     posted_by:       row.posted_by,
