@@ -455,7 +455,8 @@ export default function NorCalThrifting() {
               background: "#FBF5EC", borderRadius: "12px", padding: "0 16px", border: "1px solid #E8DCC8",
             }}>
               {loading ? <Loader2 size={20} color="#A8542C" className="spin" /> : <Search size={20} color="#A8542C" />}
-              <input type="text" placeholder="Search by city, state, ZIP, or what you're hunting for…"
+              {/* "state" dropped from the placeholder — every listing is CA, same reason the State filter is disabled above */}
+              <input type="text" placeholder="Search by city, ZIP, or what you're hunting for…"
                 value={query} onChange={e => setQuery(e.target.value)}
                 style={{ flex: 1, border: "none", outline: "none", background: "transparent",
                   padding: "14px 12px", fontSize: "16px", fontFamily: "inherit", color: "#3D2E26" }}
