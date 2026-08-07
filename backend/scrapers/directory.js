@@ -57,6 +57,28 @@ function buildAddress(tags) {
   return num && street ? `${num} ${street}` : null;
 }
 
+function titleCase(str) {
+  return str.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
+// OSM's addr:city is crowdsourced and occasionally messy: casing varies
+// ("redding" instead of "Redding"), and rarely a street-name fragment ends
+// up duplicated into the city tag (observed: addr:city="St. Chico" on a
+// business named "6th St. Secondhand", in a city we were already querying
+// as "Chico"). Only strips a "St./Saint " prefix when what's left exactly
+// matches the city we searched for, so real "St. <Town>" place names (e.g.
+// St. Helena) are never affected — this only fires on our own known query
+// target, not on place names generally.
+function cleanCityTag(rawCity, fallbackCity) {
+  if (!rawCity) return fallbackCity;
+  const trimmed = rawCity.trim();
+  const stripped = trimmed.replace(/^(st\.?|saint)\s+/i, '');
+  if (stripped !== trimmed && stripped.toLowerCase() === fallbackCity.toLowerCase()) {
+    return fallbackCity;
+  }
+  return titleCase(trimmed);
+}
+
 function buildDescription(name, tags, categoryLabel) {
   const bits = [`${name} is a ${categoryLabel.toLowerCase()} shop`];
   const phone = tags['contact:phone'] || tags.phone;
@@ -81,17 +103,18 @@ async function upsertElement(el, fallbackCity, fallbackState) {
 
   const category = categoryFor(tags.shop);
   const address = buildAddress(tags);
+  const city = cleanCityTag(tags['addr:city'], fallbackCity);
 
   await upsertSale({
     source:          'osm_directory',
     source_url:      null,
     source_id:       `osm_n${el.id}`,
-    title:           `${name} — ${tags['addr:city'] || fallbackCity}`,
+    title:           `${name} — ${city}`,
     description:     buildDescription(name, tags, category),
     address,
     address_visible: !!address,
     location_approx: false, // OSM node coordinates are the actual mapped point, not a geocoded guess
-    city:            tags['addr:city']  || fallbackCity,
+    city,
     state:           tags['addr:state'] || fallbackState,
     zip:             tags['addr:postcode'] || null,
     lat:             el.lat,
