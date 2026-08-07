@@ -12,23 +12,25 @@ Live at **[norcalthrifting.com](https://norcalthrifting.com)**.
 
 **Backend**
 - Scrapes Craigslist (HTML) and EstateSales.net (JSON-LD) for NorCal cities
+- Pulls thrift/vintage/consignment/antique store locations from OpenStreetMap's Overpass API, layered on top of a hand-curated list of major chains (Goodwill, Salvation Army, Habitat ReStore)
 - Parses free-text listing bodies to extract dates, times, ZIP codes, and categories
-- Geocodes every sale to lat/lng using the free U.S. Census Geocoder
+- Geocodes sales to lat/lng using the free U.S. Census Geocoder, with a Nominatim/OpenStreetMap fallback for listings that don't expose a full street address (common for estate sales pre-event-day, and Craigslist posts that only show a neighborhood)
 - Stores everything in **Turso** (cloud-hosted libSQL/SQLite)
 - JWT auth (httpOnly cookie) with signup/signin and an admin role
 - Accepts community-submitted sales via a rate-limited REST endpoint (5/hour/IP, requires sign-in)
 - Accepts photo uploads on submissions (multer + sharp, 5 photos/8MB max)
-- Auto-refreshes scrapers on a configurable cron schedule (default: 6 AM daily)
+- Auto-refreshes scrapers on a configurable cron schedule (default: 6 AM daily), plus a boot-time self-heal that runs a fresh scrape immediately if the last successful run is more than 20 hours stale — covers Render free-tier restarts landing on a bad minute for the cron
 - Auto-expires old listings so results stay current
 
 **Frontend**
 - Warm, editorial design with a paper-grain texture and serif typography
 - Live search with 250 ms debounce, advanced filters (date range, sale type, "open now", quick chips)
-- Map view (react-leaflet + OpenStreetMap) alongside the list view
+- Map view (react-leaflet + OpenStreetMap) alongside the list view, with an "approximate location" note on pins that come from a fallback geocode rather than an exact address
 - Sign up / sign in, persistent favorites, "Add a Sale" submission modal with photo upload
 - Admin dashboard: stats, listings management, user role management, manual scraper trigger
+- Contact Us link in the header (mailto to hello@norcalthrifting.com)
 - Opens any listing in Google Maps with one click
-- Gracefully falls back to bundled sample listings if the backend is unreachable
+- Gracefully falls back to bundled sample listings if the backend is unreachable, retrying with a longer timeout first so a real cold start doesn't need to
 
 ---
 
@@ -39,7 +41,7 @@ NorCal Thrifting is intentionally local. The competitive advantage over national
 Current and planned sources:
 - **Garage sales** — Craigslist scraper (live)
 - **Estate sales** — EstateSales.net scraper (live)
-- **Thrift stores** — directory of 34 verified NorCal stores: Goodwill, Salvation Army, Habitat ReStore (live)
+- **Thrift, vintage, consignment & antique stores** — a hand-curated baseline of 34 major-chain locations (Goodwill, Salvation Army, Habitat ReStore), plus 50+ independent stores discovered via OpenStreetMap and growing weekly (live)
 - **Flea markets & swap meets** — directory listings (planned)
 - **Church, library & community sales** — community submissions (planned)
 - **Find of the Day** — user-posted photos of great finds (planned — most differentiated long-term feature)
@@ -55,10 +57,11 @@ Current and planned sources:
 | Database | Turso (libSQL/SQLite cloud) via `@libsql/client` |
 | Auth | bcryptjs + jsonwebtoken, httpOnly cookie, 30-day JWT |
 | Photo uploads | multer + sharp |
-| Scraping | Craigslist (axios + cheerio), EstateSales.net (axios + cheerio, JSON-LD) |
-| Geocoding | U.S. Census Geocoder (free, no API key required) |
-| Scheduling | node-cron |
+| Scraping | Craigslist (axios + cheerio), EstateSales.net (axios + cheerio, JSON-LD), OpenStreetMap Overpass API (thrift/vintage/antique directory) |
+| Geocoding | U.S. Census Geocoder (precise addresses) + Nominatim/OpenStreetMap (city/ZIP-centroid fallback) — both free, no API key required |
+| Scheduling | node-cron, plus a boot-time staleness check |
 | Hosting | Render (backend), Vercel (frontend) |
+| Uptime monitoring | UptimeRobot (free tier, pings `/api/health` every 5 min to keep the Render backend warm) |
 
 All data sources and hosting targets are free. No paid APIs in use.
 
@@ -73,10 +76,10 @@ NorCalThrifting/
 │   ├── db.js                   → Turso/libSQL schema & query helpers (async)
 │   ├── auth.js                 → JWT signing/verification, requireAuth/requireAdmin
 │   ├── parser.js                → Free-text → structured data (date, time, ZIP, categories)
-│   ├── geocode.js               → U.S. Census geocoder client
-│   ├── refresh.js               → Runs all scrapers once
+│   ├── geocode.js               → U.S. Census geocoder + Nominatim fallback
+│   ├── refresh.js               → Runs all scrapers once (directory scraper gated to once/week)
 │   ├── seed.js                  → Inserts sample listings
-│   ├── seed-thrift-stores.js    → Seeds the 34-store thrift directory
+│   ├── seed-thrift-stores.js    → Seeds the 34-store hand-curated chain directory
 │   ├── routes/
 │   │   ├── auth.js              → signup / signin / signout / me
 │   │   ├── favorites.js         → list / toggle favorites
@@ -85,11 +88,14 @@ NorCalThrifting/
 │   ├── .env.example             → Copy to .env and configure
 │   └── scrapers/
 │       ├── craigslist.js        → HTML scraping for NorCal cities
-│       └── estatesales.js       → JSON-LD scraping for CA cities
+│       ├── estatesales.js       → JSON-LD scraping for CA cities
+│       └── directory.js         → OpenStreetMap Overpass API scraping for thrift/vintage/antique stores
 └── frontend/
     ├── index.html
     ├── vite.config.js           → Dev proxy: /api → localhost:3001
     ├── vercel.json               → Vercel deployment config
+    ├── public/
+    │   └── favicon.svg           → Site favicon
     └── src/
         ├── main.jsx
         └── norcal_thrifting.jsx → Single-file React app
@@ -153,12 +159,14 @@ cd C:\Projects\NorCalThrifting\backend
 # Option A — load sample listings instantly
 npm run seed
 
-# Option B — scrape live listings from Craigslist + EstateSales.net
+# Option B — scrape live listings from Craigslist + EstateSales.net + the OSM store directory
 npm run refresh
 
-# Option C — seed the thrift store directory (34 verified NorCal stores)
+# Option C — seed just the hand-curated chain directory (34 verified NorCal stores)
 node seed-thrift-stores.js
 ```
+
+`npm run refresh` runs everything in `refresh.js`, including the OSM directory scraper — but that one only actually fetches if it's never run before or the last run is more than 7 days old, to stay polite to Overpass's free public server.
 
 ---
 
@@ -190,7 +198,7 @@ Frontend (`frontend/.env`, see `frontend/.env.example`):
 ### `GET /api/health`
 Liveness check.
 ```json
-{ "ok": true, "sales": 434, "now": "2026-06-27T23:00:00Z" }
+{ "ok": true, "sales": 292, "now": "2026-08-07T18:37:27Z" }
 ```
 
 ### `GET /api/sales`
@@ -205,7 +213,7 @@ Search and list sales. All query params are optional.
 | `from` | YYYY-MM-DD | Only sales on or after this date |
 | `to` | YYYY-MM-DD | Only sales on or before this date |
 | `sale_type` | string | e.g. `garage_sale`, `estate_sale`, `thrift_store` |
-| `limit` | number | Results per page, 1–500 (default 100) |
+| `limit` | number | Results per page, 1–500 (default 500 — there's no pagination UI, so an unspecified limit returns everything up to the safety cap) |
 
 ### `GET /api/sales/:id`
 Returns a single sale by ID. 404 if not found.
@@ -252,13 +260,14 @@ Required fields: `title`, `address`, `city`, `state`, `sale_date`. Optional: `de
 
 ## Deployment
 
-The live site runs on three free-tier services:
+The live site runs entirely on free-tier services:
 
 - **Database** — Turso (libSQL cloud), `libsql://norcal-thrifting-voblak2.aws-us-west-2.turso.io`
 - **Backend** — Render, configured via [`render.yaml`](render.yaml). Paste `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` into the Render dashboard env vars (marked `sync: false` in the manifest so they aren't committed)
 - **Frontend** — Vercel, configured via [`frontend/vercel.json`](frontend/vercel.json). Set `VITE_API_URL` to the Render service URL
 - **DNS** — `norcalthrifting.com` (Porkbun) points at Vercel's nameservers
-- **Keep-alive** — Render's free tier spins the backend down after 15 min of inactivity, causing a slow "cold start" on the next request. A GitHub Actions workflow ([`.github/workflows/keepalive.yml`](.github/workflows/keepalive.yml)) pings `/api/health` every 10 minutes to keep it warm
+- **Email** — `hello@norcalthrifting.com` via Porkbun's free email forwarding to a personal Gmail, with Gmail's "Send mail as" configured (SMTP through `smtp.gmail.com` with an App Password) so replies go out as that address too. The header's Contact Us link points here.
+- **Keep-alive** — Render's free tier spins the backend down after 15 min of inactivity, causing a slow "cold start" on the next request. Originally used a GitHub Actions cron to ping `/api/health`, but GitHub's `schedule` trigger turned out to be unreliable in practice — measured real gaps of 40 minutes to nearly 6 hours despite a `*/10 * * * *` schedule, since GitHub deprioritizes scheduled workflow runs under platform load. Replaced with **UptimeRobot** (free tier), which pings `/api/health` every 5 minutes from outside GitHub's scheduler and actually does the job. As a backstop, the frontend's fetch also retries with a much longer timeout (45s) before falling back to sample data, so an occasional cold start degrades to a slower load rather than fake data.
 
 ---
 
@@ -279,7 +288,12 @@ Edit [backend/scrapers/estatesales.js](backend/scrapers/estatesales.js) and add 
 
 ### Adding thrift stores / directory entries
 
-Edit [backend/seed-thrift-stores.js](backend/seed-thrift-stores.js) and re-run `node seed-thrift-stores.js`. Upserts on `(source, source_id)`, so it's safe to re-run after edits.
+Two ways, depending on the store:
+
+- **A known chain location** (Goodwill, Salvation Army, Habitat ReStore, etc.) — add it to [backend/seed-thrift-stores.js](backend/seed-thrift-stores.js) and re-run `node seed-thrift-stores.js`. This hand-curated list exists because OpenStreetMap's coverage of specific chain locations turned out to be incomplete when checked directly (only ~40% of this list had a close match in OSM data) — don't assume OSM alone covers these.
+- **Everything else** (independents, vintage, consignment, antiques) — these come from [backend/scrapers/directory.js](backend/scrapers/directory.js) automatically. To expand geographic coverage, add a city to `DIRECTORY_CITIES` (needs `city`, `state`, and `lat`/`lon` for the search center — a ~20km radius is queried around each point).
+
+Both upsert on `(source, source_id)`, so re-running is always safe — `directory.js` additionally checks for a nearby same-chain store before inserting, so it won't double-pin a location that's already in the hand-curated list.
 
 ### Adding a new source entirely
 
@@ -296,7 +310,9 @@ The database's unique constraint on `(source, source_id)` means re-running the s
 - **Photo storage is ephemeral** — `backend/uploads/` is local disk, which Render wipes on every redeploy. Swap for Cloudflare R2 or Backblaze B2 before relying on uploaded photos long-term.
 - **Submission moderation** — community submissions go live immediately. Consider an `approved` column and review UI if spam becomes an issue.
 - **Captcha** — no bot protection on the submission form yet beyond rate limiting and requiring sign-in.
-- **Geocoder** — the U.S. Census Geocoder is free but slow and U.S.-only; fine at current traffic levels.
+- **Geocoder** — the U.S. Census Geocoder is free but slow and U.S.-only, and only matches full street addresses (no city/ZIP-only lookups) — the Nominatim fallback covers that gap for listings without a full address, at the cost of a coarser (city/ZIP-centroid) pin.
+- **OSM directory data quality** — crowdsourced, so coverage and tagging (city names, addresses) are occasionally inconsistent. `directory.js` normalizes what it can (casing, a couple of known mis-tagging patterns) but isn't exhaustive. The hand-curated chain list exists specifically because OSM's coverage of those chains was found to be incomplete — don't assume it's a superset without checking.
+- **Directory scraper is node-only** — `directory.js` only queries OSM `node` elements, not `way`s (building outlines). Some stores mapped as building polygons rather than points aren't picked up; not fixed yet.
 
 ---
 
@@ -307,6 +323,9 @@ Craigslist occasionally rate-limits IPs that hit many pages in quick succession.
 
 **`[estatesales] {city}: 0 cards found — selector may be stale`**
 Their HTML changed. Open the city page in a browser, inspect a sale card, find a stable selector, and update the scraper.
+
+**`[directory] fetch failed (attempt N/3, status 429/504)`**
+Overpass's public server only allows 2 concurrent slots per IP and is shared with everyone hitting it — this is usually transient load, and `directory.js` already retries with backoff (15s/30s/60s). If a city fails all 3 attempts, it just gets skipped for that run; the weekly refresh will pick it up next time. Not something to "fix" unless it's persistent.
 
 **Empty results from `GET /api/sales`**
 Run `npm run seed` for instant sample data, or `npm run refresh` for live data.
