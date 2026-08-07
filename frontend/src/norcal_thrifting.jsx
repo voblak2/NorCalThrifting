@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Search, MapPin, Calendar, Clock, Tag, ExternalLink, X, Sparkles,
   Heart, Filter, Plus, Loader2, AlertCircle, Shield, LogOut, User,
-  ChevronRight, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap, Camera, ShoppingBag,
+  ChevronRight, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap, Camera, ShoppingBag, Mail,
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -330,7 +330,18 @@ export default function NorCalThrifting() {
 
       <header style={{ position: "relative", zIndex: 1, padding: "32px 24px 16px", maxWidth: "1100px", margin: "0 auto" }}>
         {/* ─── User bar ────────────────────────────────────────────────── */}
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+          <a
+            href="mailto:hello@norcalthrifting.com"
+            style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              border: "1px solid #E8DCC8", borderRadius: "8px",
+              padding: "7px 14px", fontSize: "14px", fontWeight: 600,
+              color: "#6B5444", fontFamily: "inherit", textDecoration: "none",
+            }}
+          >
+            <Mail size={15} /> Contact Us
+          </a>
           {user && user.role !== 'admin' ? (
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <div style={{
