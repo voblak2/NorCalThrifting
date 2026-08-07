@@ -148,14 +148,17 @@ export default function NorCalThrifting() {
     if (dateTo)   params.set('to',   dateTo);
     if (saleType) params.set('sale_type', saleType);
     const url = `${API_URL}/sales?${params.toString()}`;
-    const tryFetch = () => fetch(url, { credentials: 'include', signal: AbortSignal.timeout(4000) })
+    const tryFetch = (timeoutMs) => fetch(url, { credentials: 'include', signal: AbortSignal.timeout(timeoutMs) })
       .then(res => { if (!res.ok) throw new Error('bad status'); return res.json(); });
 
     try {
-      // A single retry absorbs brief upstream DB blips instead of falling back to sample data.
-      const data = await tryFetch().catch(async () => {
+      // First attempt is fast — the common case is a already-warm server. If that
+      // fails, the retry uses a much longer timeout: Render's free tier can take
+      // 30-50s to cold-start, and falling back to fake sample data after only a
+      // few seconds is worse than a longer wait for real data.
+      const data = await tryFetch(4000).catch(async () => {
         await new Promise(r => setTimeout(r, 1000));
-        return tryFetch();
+        return tryFetch(45000);
       });
       setSales(data.sales || []);
       setUsingFallback(false);

@@ -177,7 +177,11 @@ export async function searchSales(opts = {}) {
     args.push(opts.sale_type);
   }
 
-  const limit = Math.min(Math.max(parseInt(opts.limit) || 100, 1), 500);
+  // Default matches the hard cap: there's no pagination UI, so a caller that
+  // omits limit should get everything (up to the safety ceiling), not a
+  // silent 100-row cut that biases against whatever sorts last (thrift
+  // stores, which have no sale_date and always sort after dated listings).
+  const limit = Math.min(Math.max(parseInt(opts.limit) || 500, 1), 500);
   const result = await client.execute({
     sql: `
       SELECT * FROM sales
