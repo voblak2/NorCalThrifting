@@ -150,6 +150,50 @@ export async function upsertSale(sale) {
   return { lastInsertRowid: Number(result.lastInsertRowid) };
 }
 
+// Used by the OSM directory scraper to avoid double-pinning a physical store
+// that's already in the DB from another source (e.g. the hand-curated chain
+// list) — a coarse bounding-box pre-filter in SQL, then exact haversine
+// distance in JS for the small candidate set. No spatial extension needed
+// at this data volume.
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Chain thrift stores legitimately cluster within a few hundred meters of
+// unrelated independent shops in the same commercial district (observed
+// directly: a Goodwill and an unrelated "Totally Recycled" 322m apart) —
+// distance alone isn't a safe duplicate signal, since a false positive here
+// means silently dropping a real, distinct store. Require a shared known-
+// chain keyword too, so two different businesses that happen to be close
+// never get treated as the same store.
+const KNOWN_CHAINS = ['goodwill', 'salvation army', 'habitat for humanity', 'st vincent de paul', 'savers', 'value village'];
+function chainKeyword(name) {
+  const n = (name || '').toLowerCase();
+  return KNOWN_CHAINS.find(k => n.includes(k)) || null;
+}
+
+export async function findNearbyThriftStore(lat, lng, name, radiusMeters = 400) {
+  const keyword = chainKeyword(name);
+  if (!keyword) return false; // not a recognized chain — never treat as a duplicate of something else
+
+  // A degree of longitude covers fewer meters than a degree of latitude
+  // except at the equator — using the same delta for both under-widens the
+  // longitude bound at NorCal's latitude (~36-41°N), letting real nearby
+  // matches fall outside the box before the haversine check ever runs.
+  const latDeg = radiusMeters / 111000;
+  const lngDeg = radiusMeters / (111000 * Math.cos(lat * Math.PI / 180));
+  const result = await client.execute({
+    sql: `SELECT lat, lng, title FROM sales WHERE sale_type = 'thrift_store' AND lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?`,
+    args: [lat - latDeg, lat + latDeg, lng - lngDeg, lng + lngDeg],
+  });
+  return result.rows.some(row =>
+    chainKeyword(row.title) === keyword && haversineMeters(lat, lng, row.lat, row.lng) < radiusMeters
+  );
+}
+
 // ---------- Query ----------
 
 export async function searchSales(opts = {}) {
@@ -384,6 +428,13 @@ export async function countPendingSales() {
 export async function getLastScraperRun() {
   const result = await client.execute(
     `SELECT MAX(created_at) as last_run FROM sales WHERE source != 'submission'`
+  );
+  return result.rows[0]?.last_run ?? null;
+}
+
+export async function getLastDirectoryRefresh() {
+  const result = await client.execute(
+    `SELECT MAX(created_at) as last_run FROM sales WHERE source = 'osm_directory'`
   );
   return result.rows[0]?.last_run ?? null;
 }
