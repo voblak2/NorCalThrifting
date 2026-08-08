@@ -38,7 +38,17 @@ const HEADERS = {
   'Cache-Control': 'max-age=0',
 };
 
-// NorCal / Central Valley subdomains only
+// NorCal / Central Valley subdomains only.
+//
+// 'sfbay' is a single entry, not one per Bay Area city: Craigslist runs the
+// whole San Francisco Bay Area (SF, Oakland, Berkeley, San Jose, the
+// Peninsula, etc.) as one combined site — oakland.craigslist.org,
+// berkeley.craigslist.org, and sanjose.craigslist.org don't resolve at all,
+// and sanfrancisco.craigslist.org just redirects to the same sfbay area
+// (verified directly, 2026-08-08). Exactly like the 'sacramento' entry
+// already picks up Roseville/Folsom/Carmichael/etc. through each listing's
+// own location text without a separate entry per suburb, one 'sfbay' entry
+// covers Oakland/Berkeley/San Jose/San Francisco the same way.
 export const CRAIGSLIST_CITIES = [
   { sub: 'sacramento',  city: 'Sacramento',  state: 'CA' },
   { sub: 'stockton',    city: 'Stockton',    state: 'CA' },
@@ -49,6 +59,7 @@ export const CRAIGSLIST_CITIES = [
   { sub: 'bakersfield', city: 'Bakersfield', state: 'CA' },
   { sub: 'merced',      city: 'Merced',      state: 'CA' },
   { sub: 'visalia',     city: 'Visalia',     state: 'CA' },
+  { sub: 'sfbay',       city: 'San Francisco', state: 'CA' },
 ];
 
 export async function refreshCity({ sub, city, state }) {
