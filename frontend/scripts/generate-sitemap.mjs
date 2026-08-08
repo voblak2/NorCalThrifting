@@ -7,6 +7,7 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { LOCATIONS } from '../src/locations.js';
 
 const SITE_URL = 'https://www.norcalthrifting.com';
 const API_URL = process.env.VITE_API_URL || 'https://norcal-thrifting-api.onrender.com/api';
@@ -51,6 +52,9 @@ const today = new Date().toISOString().slice(0, 10);
 const entries = [
   urlEntry(`${SITE_URL}/`, { lastmod: today, changefreq: 'daily', priority: '1.0' }),
   urlEntry(`${SITE_URL}/thrift-stores`, { lastmod: today, changefreq: 'weekly', priority: '0.8' }),
+  ...Object.values(LOCATIONS).map(loc => urlEntry(`${SITE_URL}${loc.path}`, {
+    lastmod: today, changefreq: 'daily', priority: '0.9',
+  })),
   ...sales.map(sale => urlEntry(`${SITE_URL}/listing/${sale.id}`, {
     lastmod: (sale.created_at || today).slice(0, 10),
     changefreq: sale.sale_type === 'thrift_store' ? 'monthly' : 'daily',
@@ -61,4 +65,4 @@ const entries = [
 const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries.join('\n')}\n</urlset>\n`;
 
 writeFileSync(OUT_PATH, xml);
-console.log(`[sitemap] wrote ${sales.length + 2} URLs to ${OUT_PATH}`);
+console.log(`[sitemap] wrote ${entries.length} URLs to ${OUT_PATH}`);
