@@ -6,15 +6,9 @@ import {
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
-
-// ─── Backend configuration ─────────────────────────────────────────────────
-// In dev, Vite proxies /api → localhost:3001. In production set VITE_API_URL
-// to the Render backend URL (e.g. https://norcal-thrifting-api.onrender.com/api).
-const API_URL = import.meta.env.VITE_API_URL || '/api';
-// Uploaded photo paths come back from the API as host-relative ("/uploads/x.jpg").
-// They live on the backend, not the frontend's own origin, so resolve them against
-// the API's host whenever VITE_API_URL points at a different domain (e.g. Vercel + Render).
-const API_ORIGIN = API_URL.startsWith('http') ? new URL(API_URL).origin : '';
+import { Link } from 'react-router-dom';
+import { API_URL, API_ORIGIN, formatDate, formatTime, buildMapUrl, initials } from './shared.js';
+import { useSEO } from './useSEO.js';
 
 // ─── Bundled fallback data ─────────────────────────────────────────────────
 const SAMPLE_SALES = [
@@ -59,26 +53,13 @@ const SAMPLE_SALES = [
 //   "ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"
 // ];
 
-function formatDate(s) {
-  if (!s) return "Date TBD";
-  const d = new Date(s + "T12:00:00");
-  return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-}
-function formatTime(t) {
-  if (!t) return null;
-  const [h, m] = t.split(":").map(Number);
-  const period = h >= 12 ? "PM" : "AM";
-  return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${period}`;
-}
-function buildMapUrl(sale) {
-  const parts = [sale.address, sale.city, sale.state, sale.zip].filter(Boolean);
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(parts.join(', '))}`;
-}
-function initials(name) {
-  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-}
-
 export default function NorCalThrifting() {
+  useSEO({
+    title: 'NorCal Thrifting — Garage Sales, Estate Sales & Thrift Stores in Northern California',
+    description: 'Browse live garage sales, estate sales, and thrift stores across Sacramento, the Central Valley, and Northern California — updated daily.',
+    path: '/',
+  });
+
   const [query, setQuery]           = useState("");
   // const [stateFilter, setStateFilter] = useState("All"); // disabled — see STATES comment above
   const [cityFilter, setCityFilter] = useState("All");
@@ -351,6 +332,17 @@ export default function NorCalThrifting() {
       <header style={{ position: "relative", zIndex: 1, padding: "32px 24px 16px", maxWidth: "1100px", margin: "0 auto" }}>
         {/* ─── User bar ────────────────────────────────────────────────── */}
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+          <Link
+            to="/thrift-stores"
+            style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              border: "1px solid #E8DCC8", borderRadius: "8px",
+              padding: "7px 14px", fontSize: "14px", fontWeight: 600,
+              color: "#3A8A6E", fontFamily: "inherit", textDecoration: "none",
+            }}
+          >
+            <ShoppingBag size={15} /> Thrift Store Directory
+          </Link>
           <a
             href="mailto:hello@norcalthrifting.com"
             style={{
@@ -755,19 +747,33 @@ export default function NorCalThrifting() {
               <span style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#9A8472" }}>
                 <Tag size={12} /> via {sale.source}
               </span>
-              <a href={buildMapUrl(sale)} onClick={(e) => openMap(sale, e)}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: "6px",
-                  padding: "8px 14px", borderRadius: "10px",
-                  background: "#A8542C", color: "#FFFCF6",
-                  textDecoration: "none", fontSize: "13px", fontWeight: 700,
-                  transition: "background 0.2s",
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = "#8E4521"}
-                onMouseLeave={e => e.currentTarget.style.background = "#A8542C"}
-              >
-                <MapPin size={14} /> Open in Maps <ExternalLink size={12} />
-              </a>
+              <div style={{ display: "flex", gap: "8px" }}>
+                {!usingFallback && (
+                  <Link to={`/listing/${sale.id}`}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: "6px",
+                      padding: "8px 14px", borderRadius: "10px",
+                      background: "none", border: "1px solid #E8DCC8", color: "#6B5444",
+                      textDecoration: "none", fontSize: "13px", fontWeight: 700,
+                    }}
+                  >
+                    Details
+                  </Link>
+                )}
+                <a href={buildMapUrl(sale)} onClick={(e) => openMap(sale, e)}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: "6px",
+                    padding: "8px 14px", borderRadius: "10px",
+                    background: "#A8542C", color: "#FFFCF6",
+                    textDecoration: "none", fontSize: "13px", fontWeight: 700,
+                    transition: "background 0.2s",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#8E4521"}
+                  onMouseLeave={e => e.currentTarget.style.background = "#A8542C"}
+                >
+                  <MapPin size={14} /> Open in Maps <ExternalLink size={12} />
+                </a>
+              </div>
             </div>
           </article>
         ))}
