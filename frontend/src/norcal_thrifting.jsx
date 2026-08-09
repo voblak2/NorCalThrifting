@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Search, MapPin, Calendar, Tag, X, Sparkles,
   Heart, Filter, Plus, Loader2, AlertCircle, Shield, LogOut, User,
-  ChevronRight, ChevronDown, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap, Camera, ShoppingBag, Mail,
+  ChevronRight, ChevronDown, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap, Camera, ShoppingBag, Mail, Menu,
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -79,6 +79,7 @@ export default function NorCalThrifting() {
   const [viewMode, setViewMode]     = useState('cards'); // 'cards' | 'map'
   const [showRegionMenu, setShowRegionMenu] = useState(false);
   const regionMenuRef = useRef(null);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   useEffect(() => {
     if (!showRegionMenu) return;
@@ -340,8 +341,8 @@ export default function NorCalThrifting() {
       )}
 
       <header style={{ position: "relative", zIndex: 1, padding: "32px 24px 16px", maxWidth: "1100px", margin: "0 auto" }}>
-        {/* ─── User bar ────────────────────────────────────────────────── */}
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+        {/* ─── User bar (desktop — hidden below 720px, see .desktop-user-nav media query) ── */}
+        <div className="desktop-user-nav" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
           <div ref={regionMenuRef} style={{ position: "relative" }}>
             <button
               onClick={() => setShowRegionMenu(v => !v)}
@@ -436,6 +437,114 @@ export default function NorCalThrifting() {
               <User size={15} /> Sign in
             </button>
           ) : null}
+        </div>
+
+        {/* ─── User bar (mobile — hidden at 720px+, see .mobile-user-nav media query) ── */}
+        <div className="mobile-user-nav" style={{ marginBottom: "16px" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              onClick={() => setShowMobileMenu(v => !v)}
+              aria-label={showMobileMenu ? "Close menu" : "Open menu"}
+              style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                border: "1px solid #E8DCC8", borderRadius: "8px",
+                padding: "9px 14px", fontSize: "14px", fontWeight: 600,
+                color: "#A8542C", fontFamily: "inherit", cursor: "pointer",
+                background: showMobileMenu ? "#FBF5EC" : "none",
+              }}
+            >
+              {showMobileMenu ? <X size={18} /> : <Menu size={18} />} Menu
+            </button>
+          </div>
+
+          {showMobileMenu && (
+            <div style={{
+              marginTop: "10px", background: "#FFFCF6", border: "1px solid #E8DCC8",
+              borderRadius: "14px", padding: "8px", boxShadow: "0 4px 16px rgba(61, 46, 38, 0.06)",
+            }}>
+              <p style={{ fontSize: "12px", fontWeight: 700, color: "#9A8472", textTransform: "uppercase",
+                letterSpacing: "0.04em", margin: "8px 12px 4px" }}>
+                Browse by Region
+              </p>
+              {Object.entries(LOCATIONS).map(([key, loc]) => (
+                <Link
+                  key={key}
+                  to={loc.path}
+                  onClick={() => setShowMobileMenu(false)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "8px",
+                    padding: "11px 12px", borderRadius: "8px",
+                    color: "#3D2E26", fontSize: "15px", fontWeight: 600, textDecoration: "none",
+                  }}
+                >
+                  <MapPin size={15} color="#A8542C" /> {loc.shortLabel}
+                </Link>
+              ))}
+
+              <div style={{ borderTop: "1px dashed #E8DCC8", margin: "8px 4px" }} />
+
+              <Link
+                to="/thrift-stores"
+                onClick={() => setShowMobileMenu(false)}
+                style={{
+                  display: "flex", alignItems: "center", gap: "8px",
+                  padding: "11px 12px", borderRadius: "8px",
+                  color: "#3A8A6E", fontSize: "15px", fontWeight: 600, textDecoration: "none",
+                }}
+              >
+                <ShoppingBag size={15} /> Thrift Store Directory
+              </Link>
+              <a
+                href="mailto:hello@norcalthrifting.com"
+                style={{
+                  display: "flex", alignItems: "center", gap: "8px",
+                  padding: "11px 12px", borderRadius: "8px",
+                  color: "#6B5444", fontSize: "15px", fontWeight: 600, textDecoration: "none",
+                }}
+              >
+                <Mail size={15} /> Contact Us
+              </a>
+
+              <div style={{ borderTop: "1px dashed #E8DCC8", margin: "8px 4px" }} />
+
+              {user && user.role !== 'admin' ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 12px" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "15px", color: "#3D2E26", fontWeight: 600 }}>
+                    <div style={{
+                      width: "26px", height: "26px", borderRadius: "50%",
+                      background: "#A8542C", color: "#FFFCF6",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: "12px", fontWeight: 700, flexShrink: 0,
+                    }}>
+                      {initials(user.name)}
+                    </div>
+                    Hi, {user.name.split(' ')[0]}
+                  </span>
+                  <button onClick={() => { signOut(); setShowMobileMenu(false); }} style={{
+                    display: "flex", alignItems: "center", gap: "5px",
+                    background: "none", border: "1px solid #E8DCC8", borderRadius: "8px",
+                    padding: "6px 10px", fontSize: "13px", color: "#9A8472",
+                    fontFamily: "inherit", cursor: "pointer",
+                  }}>
+                    <LogOut size={13} /> Sign out
+                  </button>
+                </div>
+              ) : !user ? (
+                <button
+                  onClick={() => { setAuthMode('signin'); setShowAuth(true); setShowMobileMenu(false); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "8px",
+                    background: "none", border: "none", width: "100%", textAlign: "left",
+                    padding: "11px 12px", borderRadius: "8px",
+                    color: "#A8542C", fontSize: "15px", fontWeight: 600,
+                    fontFamily: "inherit", cursor: "pointer",
+                  }}
+                >
+                  <User size={15} /> Sign in
+                </button>
+              ) : null}
+            </div>
+          )}
         </div>
 
         <div style={{ textAlign: "center" }}>
@@ -758,6 +867,11 @@ export default function NorCalThrifting() {
       <style>{`
         @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
         .spin { animation: spin 1s linear infinite }
+        .mobile-user-nav { display: none; }
+        @media (max-width: 720px) {
+          .desktop-user-nav { display: none !important; }
+          .mobile-user-nav { display: block !important; }
+        }
       `}</style>
     </div>
   );
