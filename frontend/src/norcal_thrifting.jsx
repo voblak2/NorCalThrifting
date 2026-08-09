@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Search, MapPin, Calendar, Tag, X, Sparkles,
   Heart, Filter, Plus, Loader2, AlertCircle, Shield, LogOut, User,
-  ChevronRight, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap, Camera, ShoppingBag, Mail,
+  ChevronRight, ChevronDown, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap, Camera, ShoppingBag, Mail,
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -77,6 +77,19 @@ export default function NorCalThrifting() {
   const [showSubmit, setShowSubmit] = useState(false);
   const [showAdmin, setShowAdmin]   = useState(false);
   const [viewMode, setViewMode]     = useState('cards'); // 'cards' | 'map'
+  const [showRegionMenu, setShowRegionMenu] = useState(false);
+  const regionMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!showRegionMenu) return;
+    const handler = (e) => {
+      if (regionMenuRef.current && !regionMenuRef.current.contains(e.target)) {
+        setShowRegionMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showRegionMenu]);
 
   // Advanced filters
   const [dateFrom, setDateFrom]   = useState('');
@@ -329,6 +342,45 @@ export default function NorCalThrifting() {
       <header style={{ position: "relative", zIndex: 1, padding: "32px 24px 16px", maxWidth: "1100px", margin: "0 auto" }}>
         {/* ─── User bar ────────────────────────────────────────────────── */}
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+          <div ref={regionMenuRef} style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowRegionMenu(v => !v)}
+              style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                border: "1px solid #E8DCC8", borderRadius: "8px",
+                padding: "7px 14px", fontSize: "14px", fontWeight: 600,
+                color: "#A8542C", fontFamily: "inherit", cursor: "pointer",
+                background: showRegionMenu ? "#FBF5EC" : "none",
+              }}
+            >
+              <MapPin size={15} /> Browse by Region
+              <ChevronDown size={14} style={{ transform: showRegionMenu ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+            </button>
+            {showRegionMenu && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 50,
+                background: "#FFFCF6", border: "1px solid #E8DCC8", borderRadius: "12px",
+                boxShadow: "0 8px 24px rgba(61, 46, 38, 0.12)", padding: "6px", minWidth: "200px",
+              }}>
+                {Object.entries(LOCATIONS).map(([key, loc]) => (
+                  <Link
+                    key={key}
+                    to={loc.path}
+                    onClick={() => setShowRegionMenu(false)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "8px",
+                      padding: "9px 12px", borderRadius: "8px",
+                      color: "#3D2E26", fontSize: "14px", fontWeight: 600, textDecoration: "none",
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#F5EDDF"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                  >
+                    <MapPin size={14} color="#A8542C" /> {loc.shortLabel}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
           <Link
             to="/thrift-stores"
             style={{
@@ -566,6 +618,30 @@ export default function NorCalThrifting() {
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* ─── Browse by region ────────────────────────────────────────────── */}
+      <div style={{ position: "relative", zIndex: 1, maxWidth: "1100px", margin: "24px auto 0", padding: "0 24px" }}>
+        <p style={{ fontSize: "12.5px", fontWeight: 700, color: "#9A8472", textTransform: "uppercase",
+          letterSpacing: "0.04em", margin: "0 0 10px" }}>
+          Browse by Region
+        </p>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          {Object.entries(LOCATIONS).map(([key, loc]) => (
+            <Link key={key} to={loc.path} style={{
+              display: "flex", alignItems: "center", gap: "7px",
+              padding: "10px 18px", borderRadius: "12px",
+              background: "#FFFCF6", border: "1px solid #E8DCC8", color: "#3D2E26",
+              fontSize: "14px", fontWeight: 700, textDecoration: "none",
+              transition: "border-color 0.15s, transform 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#C66B3D"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "#E8DCC8"; e.currentTarget.style.transform = "translateY(0)"; }}
+            >
+              <MapPin size={15} color="#A8542C" /> {loc.shortLabel}
+            </Link>
+          ))}
         </div>
       </div>
 
