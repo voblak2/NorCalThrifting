@@ -199,6 +199,10 @@ export async function findNearbyThriftStore(lat, lng, name, radiusMeters = 400) 
 export async function searchSales(opts = {}) {
   const where = [
     `(expires_at IS NULL OR expires_at >= date('now'))`,
+    // Hide anything dated before today, but never touch listings with no
+    // sale_date at all (thrift stores, other permanent directory entries,
+    // and undated submissions) — those pass through unfiltered.
+    `(sale_date IS NULL OR sale_date >= date('now'))`,
     ...(opts.status === 'all' ? [] : [`status = 'active'`]),
   ];
   const args = [];
@@ -263,6 +267,12 @@ export async function getSaleById(id) {
 export async function deleteExpired() {
   const before = await countSales();
   await client.execute(`DELETE FROM sales WHERE expires_at < date('now')`);
+  // Belt-and-suspenders cleanup: expires_at is source-specific (e.g. Craigslist
+  // sets a flat 14-day expiry from scrape time, decoupled from the actual
+  // sale_date), so a dated listing can outlive its sale_date there. Hard-delete
+  // anything more than 1 day past its sale_date, leaving sale_date IS NULL rows
+  // (thrift stores, other permanent directory entries) untouched.
+  await client.execute(`DELETE FROM sales WHERE sale_date IS NOT NULL AND sale_date < date('now', '-1 day')`);
   return before - await countSales();
 }
 

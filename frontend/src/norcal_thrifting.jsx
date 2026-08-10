@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Search, MapPin, Calendar, Tag, X, Sparkles,
   Heart, Filter, Plus, Loader2, AlertCircle, Shield, LogOut, User,
-  ChevronRight, ChevronDown, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap, Camera, ShoppingBag, Mail, Menu,
+  ChevronDown, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap, Camera, ShoppingBag, Mail, Menu,
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -46,6 +46,23 @@ const SAMPLE_SALES = [
     categories: ["Furniture", "Outdoor", "Home Goods"], source: "Facebook Marketplace", address_visible: true },
 ];
 
+// Guest (not-logged-in) favorites persist per-browser via localStorage, not
+// across devices — that's the intended scope. Logged-in favorites live in
+// the DB instead (see toggleFave) and never touch these keys.
+const GUEST_FAVORITES_KEY = 'nct_guest_favorites';
+// Session-only flag (cleared when the tab/browser closes) so the sign-in
+// nudge shows at most once per session, not every time a guest hearts something.
+const NUDGE_SHOWN_KEY = 'nct_guest_nudge_shown';
+
+function loadGuestFavorites() {
+  try {
+    const stored = localStorage.getItem(GUEST_FAVORITES_KEY);
+    return stored ? new Set(JSON.parse(stored)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
 // State filter disabled — every listing is CA, so a 50-state dropdown was
 // pure dead weight. Left commented (not deleted) in case coverage ever
 // expands beyond California. Replaced with a City filter (see cityFilter).
@@ -67,7 +84,8 @@ export default function NorCalThrifting() {
   const [cityFilter, setCityFilter] = useState("All");
   const [allCities, setAllCities]   = useState([]); // populated once on mount, independent of active filters — see effect below
   const [showFilters, setShowFilters] = useState(false);
-  const [favorites, setFavorites]   = useState(new Set());
+  const [favorites, setFavorites]   = useState(loadGuestFavorites);
+  const [showFaveNudge, setShowFaveNudge] = useState(false);
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [showFaves, setShowFaves]   = useState(false);
   const [sortBy, setSortBy]         = useState("date");
@@ -151,6 +169,17 @@ export default function NorCalThrifting() {
       })
       .catch(() => {});
   }, []);
+
+  // ─── Persist guest favorites ───────────────────────────────────────────────
+  // Only while signed out — logged-in favorites live server-side (see
+  // toggleFave/handleAuthSuccess), so this must not overwrite the guest's
+  // saved list with the server list while a session is active.
+  useEffect(() => {
+    if (user) return;
+    try {
+      localStorage.setItem(GUEST_FAVORITES_KEY, JSON.stringify([...favorites]));
+    } catch {}
+  }, [favorites, user]);
 
   // ─── Fetch sales ──────────────────────────────────────────────────────────
   const debounceRef = useRef(null);
@@ -248,12 +277,18 @@ export default function NorCalThrifting() {
         });
       } catch {}
     } else {
-      // Not logged in — toggle locally and nudge them to sign in
+      // Not logged in — toggle locally (persisted to localStorage by the
+      // effect above) and nudge them to sign in, once per session.
+      const isAdding = !favorites.has(id);
       setFavorites(prev => {
         const next = new Set(prev);
         next.has(id) ? next.delete(id) : next.add(id);
         return next;
       });
+      if (isAdding && !sessionStorage.getItem(NUDGE_SHOWN_KEY)) {
+        setShowFaveNudge(true);
+        sessionStorage.setItem(NUDGE_SHOWN_KEY, '1');
+      }
     }
   };
 
@@ -270,7 +305,10 @@ export default function NorCalThrifting() {
   const signOut = async () => {
     await fetch(`${API_URL}/auth/signout`, { method: 'POST', credentials: 'include' });
     setUser(null);
-    setFavorites(new Set());
+    // Restore whatever guest favorites were saved before sign-in, rather than
+    // clearing to empty — the persist effect skips writes while `user` is set,
+    // so localStorage still holds the pre-login guest list untouched.
+    setFavorites(loadGuestFavorites());
   };
 
   const handleAuthSuccess = (loggedInUser) => {
@@ -754,25 +792,54 @@ export default function NorCalThrifting() {
         </div>
       </div>
 
-      {/* ─── Not-logged-in favorites nudge ───────────────────────────────── */}
-      {!user && favorites.size > 0 && (
+      {/* ─── Not-logged-in favorites nudge — shows once per session, dismissible ── */}
+      {!user && showFaveNudge && (
         <div style={{
           position: "relative", zIndex: 1, maxWidth: "1100px",
           margin: "10px auto 0", padding: "0 24px",
         }}>
-          <button
-            onClick={() => { setAuthMode('signup'); setShowAuth(true); }}
-            style={{
-              width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-              padding: "10px 16px", borderRadius: "12px", border: "1px dashed #C9B89E",
-              background: "rgba(200, 160, 100, 0.07)", color: "#7A5C44",
-              fontSize: "13px", fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
-            }}
-          >
-            <Heart size={14} fill="#C66B3D" color="#C66B3D" />
-            Sign in to save your {favorites.size} {favorites.size === 1 ? 'favorite' : 'favorites'} permanently
-            <ChevronRight size={14} />
-          </button>
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "10px",
+            flexWrap: "wrap", padding: "10px 16px", borderRadius: "12px", border: "1px dashed #C9B89E",
+            background: "rgba(200, 160, 100, 0.07)", color: "#7A5C44",
+            fontSize: "13px", fontWeight: 600,
+          }}>
+            <Heart size={14} fill="#C66B3D" color="#C66B3D" style={{ flexShrink: 0 }} />
+            <span>
+              Create a free account to save favorites permanently and access them on any device —{" "}
+              <button
+                onClick={() => { setAuthMode('signin'); setShowAuth(true); }}
+                style={{
+                  background: "none", border: "none", padding: 0, cursor: "pointer",
+                  fontFamily: "inherit", fontSize: "inherit", fontWeight: 700,
+                  color: "#A8542C", textDecoration: "underline",
+                }}
+              >
+                Sign In
+              </button>
+              {" "}or{" "}
+              <button
+                onClick={() => { setAuthMode('signup'); setShowAuth(true); }}
+                style={{
+                  background: "none", border: "none", padding: 0, cursor: "pointer",
+                  fontFamily: "inherit", fontSize: "inherit", fontWeight: 700,
+                  color: "#A8542C", textDecoration: "underline",
+                }}
+              >
+                Create Account
+              </button>
+            </span>
+            <button
+              onClick={() => setShowFaveNudge(false)}
+              aria-label="Dismiss"
+              style={{
+                background: "none", border: "none", cursor: "pointer", color: "#9A8472",
+                padding: "4px", display: "flex", marginLeft: "auto", flexShrink: 0,
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
       )}
 
