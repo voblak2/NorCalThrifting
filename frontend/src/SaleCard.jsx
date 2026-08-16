@@ -36,7 +36,13 @@ function SaleCard({
 
       {sale.photo_urls && sale.photo_urls.length > 0 && (
         <div style={{ margin: "-22px -22px 16px", height: "200px", position: "relative", flexShrink: 0 }}>
-          <img src={resolvePhotoUrl(sale.photo_urls[0])} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img
+            src={resolvePhotoUrl(sale.photo_urls[0])}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
           {sale.photo_urls.length > 1 && (
             <span style={{
               position: "absolute", bottom: "8px", right: "8px",

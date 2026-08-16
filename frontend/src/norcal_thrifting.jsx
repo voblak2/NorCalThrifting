@@ -69,6 +69,16 @@ const GUEST_FAVORITES_KEY = 'nct_guest_favorites';
 // nudge shows at most once per session, not every time a guest hearts something.
 const NUDGE_SHOWN_KEY = 'nct_guest_nudge_shown';
 
+// Infinite scroll: how many listings to fetch per batch.
+const PAGE_SIZE = 20;
+// Where the "how far had the user scrolled" state lives for back-button
+// restoration — session-scoped (not permanent), one slot shared across the
+// whole feed since only one filter combination can be "current" at a time.
+const FEED_SCROLL_KEY = 'nct_feed_scroll';
+function feedSignature({ query, cityFilter, dateFrom, dateTo, saleType }) {
+  return JSON.stringify({ query, cityFilter, dateFrom, dateTo, saleType });
+}
+
 function loadGuestFavorites() {
   try {
     const stored = localStorage.getItem(GUEST_FAVORITES_KEY);
@@ -199,10 +209,75 @@ export default function NorCalThrifting() {
     }
   }, [favorites, user]);
 
-  // ─── Fetch sales ──────────────────────────────────────────────────────────
+  // ─── Fetch sales (paginated, with infinite scroll) ─────────────────────────
+  // Real server-side pagination only applies to the default, most-common view
+  // (sortBy date, no Saved/Open-Now filter, real API reachable) — those modes
+  // are client-side-only filters/sorts over whatever's been loaded, and "only
+  // the next 20 rows" doesn't make sense for "all of my favorites",
+  // "everything open right now", a client-side city sort, or the bundled
+  // 6-item sample-data fallback. Those fall back to the original
+  // single-fetch-up-to-500 behavior, unchanged.
+  const pagination = !showFaves && !openNow && sortBy === 'date' && !usingFallback;
+  const [offset, setOffset]         = useState(0);
+  const [hasMore, setHasMore]       = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Back-button restoration target — read (and immediately cleared) via a
+  // lazy useState initializer, which React guarantees runs synchronously,
+  // exactly once, during this component instance's very first render. That
+  // matters here specifically: browsers can end up rendering this page more
+  // than once around a back-navigation (bfcache resuming a frozen instance
+  // racing a fresh mount, a route transition rendering twice, etc.), and an
+  // async effect-based "have I already restored" check can't tell those
+  // apart. Doing the read/clear synchronously at the earliest possible
+  // moment, with sessionStorage.removeItem as the actual source of truth,
+  // means at most one instance — whichever happens to render first — ever
+  // sees a saved position; every other one just finds nothing and proceeds
+  // normally. On a fresh mount the filters are always at their hardcoded
+  // defaults (nothing here is driven by URL params), so the signature check
+  // can be a plain constant rather than needing state that isn't in scope yet.
+  const [restoreTarget, setRestoreTarget] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(FEED_SCROLL_KEY);
+      if (!raw) return null;
+      sessionStorage.removeItem(FEED_SCROLL_KEY);
+      const saved = JSON.parse(raw);
+      const defaultSig = feedSignature({ query: '', cityFilter: 'All', dateFrom: '', dateTo: '', saleType: '' });
+      return (saved.signature === defaultSig && saved.itemCount > PAGE_SIZE) ? saved : null;
+    } catch (err) {
+      console.error('[feed] failed to read saved scroll position:', err);
+      return null;
+    }
+  });
+
   const debounceRef = useRef(null);
-  const fetchSales = useCallback(async () => {
-    setLoading(true);
+  // Guards fetchNextPage against running before fetchSales has ever
+  // established a real page 1 for the current generation. Without this, the
+  // scroll sentinel's IntersectionObserver can fire immediately on mount —
+  // e.g. the browser attempting native scroll restoration to a deep scrollY
+  // on a page that's still just the initial `sales` placeholder — appending
+  // fetched rows onto stale/placeholder state instead of a real first page.
+  const firstPageLoadedRef = useRef(false);
+  // Bumped by every fetchSales() call; fetchSales/fetchNextPage capture the
+  // value at call time and discard their result if it no longer matches when
+  // the request resolves — guards against a slow/overlapping request (e.g.
+  // one still in flight from just before a navigation) applying stale data
+  // on top of whatever a newer request already set.
+  const fetchGenerationRef = useRef(0);
+  // Belt-and-suspenders on top of the generation check above: browsers can
+  // genuinely keep two instances of this component transiently alive around
+  // a back-navigation (e.g. a frozen bfcache instance resuming right as a
+  // fresh mount also occurs), each with its own independent generation
+  // counter that can't see the other's. React's unmount cleanup is a hard
+  // guarantee regardless of how that happens, so track it directly and
+  // refuse to touch state from a fetch that outlived its own instance.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
+
+  const buildParams = useCallback((extra = {}) => {
     const params = new URLSearchParams();
     if (query) params.set('q', query);
     // if (stateFilter && stateFilter !== 'All') params.set('state', stateFilter); // disabled — see STATES comment above
@@ -210,35 +285,169 @@ export default function NorCalThrifting() {
     if (dateFrom) params.set('from', dateFrom);
     if (dateTo)   params.set('to',   dateTo);
     if (saleType) params.set('sale_type', saleType);
-    const url = `${API_URL}/sales?${params.toString()}`;
+    for (const [k, v] of Object.entries(extra)) params.set(k, v);
+    return params;
+  }, [query, cityFilter, dateFrom, dateTo, saleType]);
+
+  const fetchWithRetry = useCallback(async (url) => {
     const tryFetch = (timeoutMs) => fetch(url, { credentials: 'include', signal: AbortSignal.timeout(timeoutMs) })
       .then(res => { if (!res.ok) throw new Error('bad status'); return res.json(); });
+    // First attempt is fast — the common case is an already-warm server. If that
+    // fails, the retry uses a much longer timeout: Render's free tier can take
+    // 30-50s to cold-start, and falling back to fake sample data after only a
+    // few seconds is worse than a longer wait for real data.
+    return tryFetch(4000).catch(async () => {
+      await new Promise(r => setTimeout(r, 1000));
+      return tryFetch(45000);
+    });
+  }, []);
+
+  // First page (or a full fetch, for the non-paginated modes) — runs whenever
+  // a filter changes, resetting the feed back to the start. Restoring a
+  // deeper scroll position (see `restoreTarget` above) is handled separately,
+  // by chaining fetchNextPage() calls after this lands — this function
+  // always just loads one normal first page.
+  // True only if this exact instance is both still mounted AND still the
+  // most recent fetch this instance kicked off — either condition failing
+  // means the caller should silently drop its result instead of applying it.
+  const stillCurrent = useCallback((myGeneration) =>
+    isMountedRef.current && fetchGenerationRef.current === myGeneration
+  , []);
+
+  const fetchSales = useCallback(async () => {
+    const myGeneration = ++fetchGenerationRef.current;
+    firstPageLoadedRef.current = false; // a new page 1 is being established — block fetchNextPage until it actually lands
+    setLoading(true);
+    const params = buildParams(pagination ? { limit: PAGE_SIZE, offset: 0 } : { limit: 500 });
+    const url = `${API_URL}/sales?${params.toString()}`;
 
     try {
-      // First attempt is fast — the common case is a already-warm server. If that
-      // fails, the retry uses a much longer timeout: Render's free tier can take
-      // 30-50s to cold-start, and falling back to fake sample data after only a
-      // few seconds is worse than a longer wait for real data.
-      const data = await tryFetch(4000).catch(async () => {
-        await new Promise(r => setTimeout(r, 1000));
-        return tryFetch(45000);
-      });
-      setSales(data.sales || []);
+      const data = await fetchWithRetry(url);
+      if (!stillCurrent(myGeneration)) return; // superseded by a newer fetch, or this instance unmounted
+      const rows = data.sales || [];
+      setSales(rows);
       setUsingFallback(false);
+      if (pagination) {
+        setOffset(rows.length);
+        setHasMore(rows.length === PAGE_SIZE);
+        firstPageLoadedRef.current = true;
+      } else {
+        setHasMore(false);
+      }
     } catch (err) {
+      if (!stillCurrent(myGeneration)) return;
       console.error('[sales] fetch failed, falling back to bundled sample data:', err);
       setSales(SAMPLE_SALES);
       setUsingFallback(true);
+      setHasMore(false);
     } finally {
-      setLoading(false);
+      if (stillCurrent(myGeneration)) setLoading(false);
     }
-  }, [query, cityFilter, dateFrom, dateTo, saleType]);
+  }, [buildParams, fetchWithRetry, pagination, stillCurrent]);
+
+  // Next page — called by the scroll sentinel below as the user nears the
+  // bottom of the feed. Appends rather than replacing.
+  const fetchNextPage = useCallback(async () => {
+    if (!firstPageLoadedRef.current || loadingMore || !hasMore || !pagination) return;
+    const myGeneration = fetchGenerationRef.current; // NOT incremented — this page load belongs to whatever generation fetchSales last established
+    setLoadingMore(true);
+    const params = buildParams({ limit: PAGE_SIZE, offset });
+    const url = `${API_URL}/sales?${params.toString()}`;
+    try {
+      const data = await fetchWithRetry(url);
+      if (!stillCurrent(myGeneration)) return; // a fresh fetchSales() reset the feed while this was in flight, or this instance unmounted
+      const rows = data.sales || [];
+      setSales(prev => [...prev, ...rows]);
+      setOffset(prev => prev + rows.length);
+      setHasMore(rows.length === PAGE_SIZE);
+    } catch (err) {
+      if (!stillCurrent(myGeneration)) return;
+      // Leave hasMore untouched so scrolling again retries, rather than
+      // silently declaring the feed finished on a transient failure.
+      console.error('[feed] failed to load next page:', err);
+    } finally {
+      if (stillCurrent(myGeneration)) setLoadingMore(false);
+    }
+  }, [buildParams, fetchWithRetry, offset, hasMore, loadingMore, pagination, stillCurrent]);
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(fetchSales, 250);
     return () => clearTimeout(debounceRef.current);
   }, [fetchSales]);
+
+  // ─── Drive back-button restoration by chaining the normal pagination ───────
+  // Reuses fetchNextPage() — the same, already-correct mechanism used for
+  // regular scrolling — rather than a separate "fetch N at once" request
+  // shape, so restoration can't drift out of sync with how paging actually
+  // behaves. Fires again every time a fetch settles, requesting one more
+  // page each time, until either enough rows are loaded to cover the saved
+  // position or the feed genuinely runs out (hasMore goes false first).
+  useEffect(() => {
+    if (!restoreTarget) return;
+    if (!pagination) { setRestoreTarget(null); return; } // filters changed before restoration finished
+    if (loading || loadingMore) return; // wait for the in-flight fetch to settle
+    if (sales.length < restoreTarget.itemCount && hasMore) {
+      fetchNextPage();
+      return;
+    }
+    const y = restoreTarget.scrollY;
+    setRestoreTarget(null);
+    // Double rAF: the first waits for React to commit, the second for the
+    // browser to finish layout/paint of the newly-added rows.
+    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
+  }, [restoreTarget, pagination, sales.length, hasMore, loading, loadingMore, fetchNextPage]);
+
+  // ─── Infinite scroll: observe a sentinel near the bottom of the grid ───────
+  const sentinelRef = useRef(null);
+  useEffect(() => {
+    if (!pagination || viewMode !== 'cards') return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      entries => { if (entries[0].isIntersecting) fetchNextPage(); },
+      { rootMargin: '600px 0px' } // start loading before the user actually hits bottom
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fetchNextPage, pagination, viewMode]);
+
+  // ─── Scroll position tracking, for back-button restoration ─────────────────
+  // A single passive listener for the component's lifetime (not re-subscribed
+  // on every page load) — reads live filter/sales state via a ref so it stays
+  // cheap on mobile. Written continuously (not just on navigate-away) so it
+  // works regardless of how the user leaves the page — clicking a listing's
+  // "Details" link, using "Back to all listings" from elsewhere, etc.
+  const feedStateRef = useRef(null);
+  useEffect(() => {
+    feedStateRef.current = {
+      signature: feedSignature({ query, cityFilter, dateFrom, dateTo, saleType }),
+      salesLength: sales.length,
+      pagination,
+    };
+  });
+  useEffect(() => {
+    let raf = null;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        const s = feedStateRef.current;
+        if (!s?.pagination) return;
+        try {
+          sessionStorage.setItem(FEED_SCROLL_KEY, JSON.stringify({
+            signature: s.signature,
+            itemCount: s.salesLength,
+            scrollY: window.scrollY,
+          }));
+        } catch (err) {
+          console.error('[feed] failed to save scroll position:', err);
+        }
+      });
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => { window.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, []);
 
   // ─── Client-side filter + sort ────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -874,7 +1083,7 @@ export default function NorCalThrifting() {
           {showFaves ? "Your saved sales" : "Sales near you"}
         </h2>
         <span style={{ color: "#6B5444", fontSize: "15px" }}>
-          {filtered.length} {filtered.length === 1 ? "sale" : "sales"} found
+          {filtered.length}{pagination && hasMore ? "+" : ""} {filtered.length === 1 ? "sale" : "sales"} found
         </span>
       </div>
 
@@ -916,6 +1125,23 @@ export default function NorCalThrifting() {
           />
         ))}
       </div>
+      )}
+
+      {/* ─── Infinite scroll sentinel / status row ─────────────────────────── */}
+      {viewMode === 'cards' && pagination && filtered.length > 0 && (
+        <div style={{ position: "relative", zIndex: 1, maxWidth: "1100px", margin: "0 auto", padding: "24px 24px 0" }}>
+          <div ref={sentinelRef} style={{ height: "1px" }} aria-hidden="true" />
+          {loadingMore && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "12px", color: "#9A8472", fontSize: "13px" }}>
+              <Loader2 size={16} className="spin" /> Loading more…
+            </div>
+          )}
+          {!loadingMore && !hasMore && (
+            <p style={{ textAlign: "center", color: "#9A8472", fontSize: "13px", padding: "12px", margin: 0 }}>
+              You've reached the end — that's every sale we've got right now.
+            </p>
+          )}
+        </div>
       )}
 
       <footer style={{ position: "relative", zIndex: 1, maxWidth: "1100px", margin: "60px auto 0", padding: "0 24px", textAlign: "center" }}>

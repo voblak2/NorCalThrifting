@@ -93,6 +93,7 @@ app.get('/api/sales', async (req, res) => {
       to:        req.query.to,
       sale_type: req.query.sale_type,
       limit:     req.query.limit,
+      offset:    req.query.offset,
     });
     res.set('Cache-Control', 'public, max-age=300');
     res.json({ count: sales.length, sales });

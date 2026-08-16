@@ -225,7 +225,41 @@ export async function searchSales(opts = {}) {
     args.push(opts.sale_type);
   }
 
-  // Dated listings (garage/estate sales) are the volatile, fast-growing set —
+  // Offset-based pagination (homepage infinite scroll): opting in by passing
+  // `offset` (even 0) switches to a single query over the full combined
+  // dated+permanent set, ordered deterministically, so each page is exactly
+  // the next N rows with no gaps or duplicates. Unlike the legacy path below,
+  // permanent (undated) rows ARE reachable here — the client just has to
+  // page far enough to reach them — so there's no need to split the query.
+  // Callers that never pass `offset` (every pre-existing call site) fall
+  // through to the unchanged legacy path further down.
+  if (opts.offset != null) {
+    const pagWhere = [...where];
+    const pagArgs = [...args];
+    // Undated (permanent) rows always pass a date filter, matching the
+    // legacy path's behavior — a thrift store has no date to fall outside
+    // a range.
+    if (opts.from) { pagWhere.push('(sale_date IS NULL OR sale_date >= ?)'); pagArgs.push(opts.from); }
+    if (opts.to)   { pagWhere.push('(sale_date IS NULL OR sale_date <= ?)'); pagArgs.push(opts.to); }
+
+    const pageLimit = Math.min(Math.max(parseInt(opts.limit) || 20, 1), 500);
+    const offset = Math.max(parseInt(opts.offset) || 0, 0);
+    const result = await client.execute({
+      sql: `
+        SELECT * FROM sales
+        WHERE ${pagWhere.join(' AND ')}
+        ORDER BY
+          CASE WHEN sale_date IS NULL THEN 1 ELSE 0 END,
+          sale_date ASC,
+          created_at DESC,
+          id ASC
+        LIMIT ${pageLimit} OFFSET ${offset}`,
+      args: pagArgs,
+    });
+    return result.rows.map(deserialize);
+  }
+
+  // Legacy path (no `offset`): dated listings (garage/estate sales) are the volatile, fast-growing set —
   // subject to `limit` and to an explicit from/to date range when given.
   const datedWhere = [...where, 'sale_date IS NOT NULL'];
   const datedArgs = [...args];
