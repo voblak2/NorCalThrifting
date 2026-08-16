@@ -1,0 +1,121 @@
+// AuthModal.jsx — sign in / create account modal, split out of norcal_thrifting.jsx.
+import { useState } from 'react';
+import { X, Loader2 } from 'lucide-react';
+import { API_URL } from './shared.js';
+import Field from './Field.jsx';
+
+export default function AuthModal({ mode, onSwitchMode, onSuccess, onClose }) {
+  const [name, setName]         = useState('');
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError]       = useState(null);
+
+  const isSignUp = mode === 'signup';
+
+  const submit = async () => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const body = isSignUp ? { name, email, password } : { email, password };
+      const res = await fetch(`${API_URL}/auth/${isSignUp ? 'signup' : 'signin'}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const msgs = {
+          missing_fields:     'Please fill in all fields.',
+          invalid_email:      'Enter a valid email address.',
+          password_too_short: 'Password must be at least 8 characters.',
+          email_taken:        'That email is already registered. Sign in instead?',
+          invalid_credentials:'Incorrect email or password.',
+          invalid_name:       'Name must be between 1 and 80 characters.',
+        };
+        throw new Error(msgs[data.error] || 'Something went wrong. Try again.');
+      }
+      onSuccess(data.user);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleKey = (e) => { if (e.key === 'Enter') submit(); };
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(44, 31, 23, 0.5)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 100, padding: "20px", backdropFilter: "blur(4px)",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: "#FFFCF6", borderRadius: "20px", padding: "28px",
+        maxWidth: "400px", width: "100%",
+        boxShadow: "0 20px 60px rgba(44, 31, 23, 0.3)",
+      }}>
+        {/* Tabs */}
+        <div style={{ display: "flex", marginBottom: "24px", borderBottom: "1px solid #E8DCC8" }}>
+          {['signin', 'signup'].map(m => (
+            <button key={m} onClick={() => { onSwitchMode(m); setError(null); }} style={{
+              flex: 1, padding: "10px", border: "none", background: "none",
+              fontFamily: "inherit", fontSize: "15px", fontWeight: 700, cursor: "pointer",
+              color: mode === m ? "#A8542C" : "#9A8472",
+              borderBottom: mode === m ? "2px solid #A8542C" : "2px solid transparent",
+              marginBottom: "-1px", transition: "all 0.15s",
+            }}>
+              {m === 'signin' ? 'Sign in' : 'Create account'}
+            </button>
+          ))}
+          <button onClick={onClose} style={{
+            background: "none", border: "none", cursor: "pointer", color: "#9A8472", padding: "8px",
+          }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          {isSignUp && (
+            <Field label="Your name" value={name} onChange={setName} placeholder="First Last" onKeyDown={handleKey} />
+          )}
+          <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" onKeyDown={handleKey} />
+          <Field label="Password" type="password" value={password} onChange={setPassword}
+            placeholder={isSignUp ? "At least 8 characters" : "Your password"} onKeyDown={handleKey} />
+
+          {error && (
+            <div style={{
+              padding: "10px 14px", borderRadius: "8px",
+              background: "rgba(198, 107, 61, 0.1)", color: "#A8542C", fontSize: "13px",
+            }}>
+              {error}
+            </div>
+          )}
+
+          <button onClick={submit} disabled={submitting} style={{
+            marginTop: "4px", padding: "14px", borderRadius: "12px",
+            background: "#A8542C", color: "#FFFCF6", border: "none",
+            fontSize: "16px", fontWeight: 700, fontFamily: "inherit",
+            cursor: submitting ? "wait" : "pointer", opacity: submitting ? 0.6 : 1,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+          }}>
+            {submitting && <Loader2 size={16} className="spin" />}
+            {submitting ? (isSignUp ? 'Creating account…' : 'Signing in…') : (isSignUp ? 'Create account' : 'Sign in')}
+          </button>
+
+          <p style={{ textAlign: "center", fontSize: "13px", color: "#9A8472", margin: 0 }}>
+            {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
+            <button onClick={() => { onSwitchMode(isSignUp ? 'signin' : 'signup'); setError(null); }} style={{
+              background: "none", border: "none", color: "#A8542C", fontWeight: 700,
+              cursor: "pointer", fontSize: "13px", fontFamily: "inherit", padding: 0,
+            }}>
+              {isSignUp ? 'Sign in' : 'Sign up'}
+            </button>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

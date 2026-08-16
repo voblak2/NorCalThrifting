@@ -9,6 +9,7 @@
 // commercial geocoder (Mapbox, Google, HERE).
 
 import axios from 'axios';
+import { sleep } from './utils.js';
 
 const ENDPOINT = 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress';
 
@@ -100,5 +101,3 @@ export async function geocodeBatch(items, delayMs = 150) {
   }
   return out;
 }
-
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));

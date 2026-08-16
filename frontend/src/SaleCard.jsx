@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Link } from 'react-router-dom';
 import { MapPin, Calendar, Clock, Tag, ExternalLink, Heart, ShoppingBag } from 'lucide-react';
 import { resolvePhotoUrl, formatDate, formatTime, buildMapUrl } from './shared.js';
@@ -10,8 +11,12 @@ const infoRowStyle = { display: "flex", alignItems: "flex-start", gap: "10px", c
  * meaningful (persisted) favorites concept (e.g. location landing pages)
  * can omit them and the heart button is simply not shown, rather than
  * faking local-only state that disappears on refresh.
+ *
+ * Memoized: the homepage renders up to 500 of these, and without this an
+ * unrelated state change (typing in search, toggling one favorite) would
+ * re-render and re-diff every card instead of just the one that changed.
  */
-export default function SaleCard({
+function SaleCard({
   sale, favorited, onToggleFave, expanded, onToggleExpanded, showDetailsLink = true,
 }) {
   const openMap = (e) => {
@@ -166,3 +171,5 @@ export default function SaleCard({
     </article>
   );
 }
+
+export default memo(SaleCard);

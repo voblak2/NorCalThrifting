@@ -20,15 +20,11 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { upsertSale } from '../db.js';
 import { geocode, geocodeApprox } from '../geocode.js';
+import { HEADERS } from './shared.js';
+import { sleep } from '../utils.js';
+import { addDays } from '../dateUtils.js';
 
 const BASE = 'https://www.estatesales.net';
-const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'Accept-Encoding': 'gzip, deflate, br',
-  'Connection': 'keep-alive',
-};
 const MAX_PER_CITY = 25;
 
 // NorCal / Central Valley CA cities.
@@ -259,10 +255,3 @@ function parsePacificDateTime(isoString) {
   }
 }
 
-function addDays(isoDate, n) {
-  const d = new Date(isoDate + 'T12:00:00');
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));

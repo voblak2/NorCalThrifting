@@ -199,10 +199,6 @@ export async function findNearbyThriftStore(lat, lng, name, radiusMeters = 400) 
 export async function searchSales(opts = {}) {
   const where = [
     `(expires_at IS NULL OR expires_at >= date('now'))`,
-    // Hide anything dated before today, but never touch listings with no
-    // sale_date at all (thrift stores, other permanent directory entries,
-    // and undated submissions) — those pass through unfiltered.
-    `(sale_date IS NULL OR sale_date >= date('now'))`,
     ...(opts.status === 'all' ? [] : [`status = 'active'`]),
   ];
   const args = [];
@@ -224,36 +220,50 @@ export async function searchSales(opts = {}) {
     const q = `%${opts.q.toLowerCase()}%`;
     args.push(q, q, q, q, q);
   }
-  if (opts.from) {
-    where.push('(sale_date IS NULL OR sale_date >= ?)');
-    args.push(opts.from);
-  }
-  if (opts.to) {
-    where.push('(sale_date IS NULL OR sale_date <= ?)');
-    args.push(opts.to);
-  }
   if (opts.sale_type) {
     where.push('sale_type = ?');
     args.push(opts.sale_type);
   }
 
-  // Default matches the hard cap: there's no pagination UI, so a caller that
-  // omits limit should get everything (up to the safety ceiling), not a
-  // silent 100-row cut that biases against whatever sorts last (thrift
-  // stores, which have no sale_date and always sort after dated listings).
+  // Dated listings (garage/estate sales) are the volatile, fast-growing set —
+  // subject to `limit` and to an explicit from/to date range when given.
+  const datedWhere = [...where, 'sale_date IS NOT NULL'];
+  const datedArgs = [...args];
+  if (opts.from) { datedWhere.push('sale_date >= ?'); datedArgs.push(opts.from); }
+  if (opts.to)   { datedWhere.push('sale_date <= ?'); datedArgs.push(opts.to); }
+
+  // No pagination UI exists, so a caller that omits limit should get
+  // everything up to this safety ceiling.
   const limit = Math.min(Math.max(parseInt(opts.limit) || 500, 1), 500);
-  const result = await client.execute({
+  const datedResult = await client.execute({
     sql: `
       SELECT * FROM sales
-      WHERE ${where.join(' AND ')}
-      ORDER BY
-        CASE WHEN sale_date IS NULL THEN 1 ELSE 0 END,
-        sale_date ASC,
-        created_at DESC
+      WHERE ${datedWhere.join(' AND ')}
+      ORDER BY sale_date ASC, created_at DESC
       LIMIT ${limit}`,
+    args: datedArgs,
+  });
+
+  // Permanent listings (thrift stores, other directory entries with no
+  // sale_date) are a small, slow-growing set — deliberately NEVER subject to
+  // `limit`, so they can't be crowded out as dated listings accumulate. This
+  // silently happened twice before this fix: at LIMIT 100 (2026-08-07) and
+  // again at LIMIT 500 once real volume passed it (2026-08-16) — a fixed cap
+  // on a combined query will always eventually be crossed again. Also never
+  // filtered by from/to — an undated row has no date to fall inside or
+  // outside a range, matching the previous behavior where a date filter
+  // always let `sale_date IS NULL` rows through regardless of the bound.
+  const permanentWhere = [...where, 'sale_date IS NULL'];
+  const permanentResult = await client.execute({
+    sql: `
+      SELECT * FROM sales
+      WHERE ${permanentWhere.join(' AND ')}
+      ORDER BY created_at DESC
+      LIMIT 2000`,
     args,
   });
-  return result.rows.map(deserialize);
+
+  return [...datedResult.rows, ...permanentResult.rows].map(deserialize);
 }
 
 export async function getSaleById(id) {

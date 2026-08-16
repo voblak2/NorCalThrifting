@@ -1,27 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, Loader2, MapPin } from 'lucide-react';
-import { API_URL } from './shared.js';
 import { useSEO } from './useSEO.js';
 import { LOCATIONS } from './locations.js';
 import SaleCard from './SaleCard.jsx';
+import { useSales } from './useSales.js';
 
 export default function LocationLanding({ region }) {
   const config = LOCATIONS[region];
-  const [sales, setSales] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const { sales, loading, error } = useSales('limit=500');
   const [expandedIds, setExpandedIds] = useState(new Set());
-
-  useEffect(() => {
-    setLoading(true);
-    setError(false);
-    fetch(`${API_URL}/sales?limit=500`, { credentials: 'include' })
-      .then(res => res.ok ? res.json() : Promise.reject())
-      .then(data => setSales(data.sales || []))
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, []);
 
   const filtered = useMemo(() => {
     if (!config.cities) return sales;

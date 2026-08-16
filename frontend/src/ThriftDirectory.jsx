@@ -1,20 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { MapPin, ShoppingBag, ChevronLeft, ExternalLink, Loader2 } from 'lucide-react';
-import { API_URL, buildMapUrl } from './shared.js';
+import { buildMapUrl } from './shared.js';
 import { useSEO } from './useSEO.js';
+import { useSales } from './useSales.js';
 
 export default function ThriftDirectory() {
-  const [stores, setStores] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(`${API_URL}/sales?sale_type=thrift_store&limit=500`, { credentials: 'include' })
-      .then(res => res.ok ? res.json() : { sales: [] })
-      .then(data => setStores((data.sales || []).sort((a, b) => a.city.localeCompare(b.city) || a.title.localeCompare(b.title))))
-      .catch(() => setStores([]))
-      .finally(() => setLoading(false));
-  }, []);
+  const { sales, loading, error } = useSales('sale_type=thrift_store&limit=500');
+  const stores = useMemo(
+    () => [...sales].sort((a, b) => a.city.localeCompare(b.city) || a.title.localeCompare(b.title)),
+    [sales]
+  );
 
   useSEO({
     title: 'Thrift Store Directory — Goodwill, Salvation Army & Independent Shops in Northern California | NorCal Thrifting',
@@ -67,7 +63,7 @@ export default function ThriftDirectory() {
           <div style={{ textAlign: "center", padding: "60px 20px",
             background: "#FFFCF6", borderRadius: "20px", border: "1px dashed #E8DCC8" }}>
             <p style={{ color: "#9A8472", fontSize: "15px", margin: 0 }}>
-              No stores found right now — check back soon.
+              {error ? "Couldn't load stores right now — try again shortly." : "No stores found right now — check back soon."}
             </p>
           </div>
         )}

@@ -14,6 +14,7 @@
 
 import axios from 'axios';
 import { upsertSale, findNearbyThriftStore } from '../db.js';
+import { sleep } from '../utils.js';
 
 const ENDPOINT = 'https://overpass-api.de/api/interpreter';
 const USER_AGENT = 'NorCalThrifting/1.0 (https://norcalthrifting.com)';
@@ -190,5 +191,3 @@ export async function refreshAll() {
   }
   return { total, totalErrors };
 }
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));

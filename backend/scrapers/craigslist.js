@@ -24,13 +24,12 @@ import * as cheerio from 'cheerio';
 import { upsertSale } from '../db.js';
 import { parsePost } from '../parser.js';
 import { geocode, geocodeApprox } from '../geocode.js';
+import { HEADERS as BASE_HEADERS } from './shared.js';
+import { sleep } from '../utils.js';
 
+// Craigslist-specific headers on top of the common browser-impersonation base.
 const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'Accept-Encoding': 'gzip, deflate, br',
-  'Connection': 'keep-alive',
+  ...BASE_HEADERS,
   'Upgrade-Insecure-Requests': '1',
   'Sec-Fetch-Dest': 'document',
   'Sec-Fetch-Mode': 'navigate',
@@ -167,5 +166,3 @@ function extractPostId(link) {
   const last = link.split('?')[0].replace(/\/$/, '').split('/').pop() || '';
   return /^[A-Za-z0-9]{8,}$/.test(last) ? last : null;
 }
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));

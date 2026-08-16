@@ -1,16 +1,31 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { lazy, Suspense, useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
-  Search, MapPin, Calendar, Tag, X, Sparkles,
+  Search, MapPin, Calendar, X, Sparkles,
   Heart, Filter, Plus, Loader2, AlertCircle, Shield, LogOut, User,
-  ChevronDown, LayoutDashboard, RefreshCw, Users, List, Map, Home, Zap, Camera, ShoppingBag, Mail, Menu,
+  ChevronDown, LayoutDashboard, Map, Home, Zap, ShoppingBag, Mail, Menu,
 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import L from 'leaflet';
 import { Link } from 'react-router-dom';
 import { API_URL, formatDate, formatTime, buildMapUrl, initials } from './shared.js';
 import { useSEO } from './useSEO.js';
 import SaleCard from './SaleCard.jsx';
 import { LOCATIONS } from './locations.js';
+import AuthModal from './AuthModal.jsx';
+import SubmitModal from './SubmitModal.jsx';
+import { btnStyle, selectStyle } from './styles.js';
+
+// MapView (react-leaflet + leaflet) and AdminDashboard are lazy-loaded: they're
+// the two heaviest/most rarely-needed pieces of the bundle — most visits never
+// open the map, and only admins ever open the dashboard.
+const MapView = lazy(() => import('./MapView.jsx'));
+const AdminDashboard = lazy(() => import('./AdminDashboard.jsx'));
+
+function LoadingFallback({ minHeight = '200px' }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight, color: '#9A8472' }}>
+      <Loader2 size={24} className="spin" />
+    </div>
+  );
+}
 
 // ─── Bundled fallback data ─────────────────────────────────────────────────
 const SAMPLE_SALES = [
@@ -58,7 +73,8 @@ function loadGuestFavorites() {
   try {
     const stored = localStorage.getItem(GUEST_FAVORITES_KEY);
     return stored ? new Set(JSON.parse(stored)) : new Set();
-  } catch {
+  } catch (err) {
+    console.error('[favorites] failed to read guest favorites from localStorage:', err);
     return new Set();
   }
 }
@@ -148,7 +164,7 @@ export default function NorCalThrifting() {
         const cities = [...new Set(data.sales.map(s => s.city).filter(Boolean))].sort();
         setAllCities(cities);
       })
-      .catch(() => {});
+      .catch(err => console.error('[cities] failed to load city filter options:', err));
   }, []);
 
   // Auth state
@@ -167,7 +183,7 @@ export default function NorCalThrifting() {
           .then(r => r.ok ? r.json() : { ids: [] })
           .then(fav => setFavorites(new Set(fav.ids || [])));
       })
-      .catch(() => {});
+      .catch(err => console.error('[auth] failed to restore session on mount:', err));
   }, []);
 
   // ─── Persist guest favorites ───────────────────────────────────────────────
@@ -178,7 +194,9 @@ export default function NorCalThrifting() {
     if (user) return;
     try {
       localStorage.setItem(GUEST_FAVORITES_KEY, JSON.stringify([...favorites]));
-    } catch {}
+    } catch (err) {
+      console.error('[favorites] failed to persist guest favorites to localStorage:', err);
+    }
   }, [favorites, user]);
 
   // ─── Fetch sales ──────────────────────────────────────────────────────────
@@ -207,7 +225,8 @@ export default function NorCalThrifting() {
       });
       setSales(data.sales || []);
       setUsingFallback(false);
-    } catch {
+    } catch (err) {
+      console.error('[sales] fetch failed, falling back to bundled sample data:', err);
       setSales(SAMPLE_SALES);
       setUsingFallback(true);
     } finally {
@@ -275,7 +294,9 @@ export default function NorCalThrifting() {
           data.favorited ? next.add(id) : next.delete(id);
           return next;
         });
-      } catch {}
+      } catch (err) {
+        console.error('[favorites] failed to sync favorite toggle:', err);
+      }
     } else {
       // Not logged in — toggle locally (persisted to localStorage by the
       // effect above) and nudge them to sign in, once per session.
@@ -318,7 +339,7 @@ export default function NorCalThrifting() {
     fetch(`${API_URL}/favorites`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : { ids: [] })
       .then(fav => setFavorites(new Set(fav.ids || [])))
-      .catch(() => {});
+      .catch(err => console.error('[favorites] failed to load favorites after sign-in:', err));
   };
 
   const openAddSale = () => {
@@ -859,7 +880,9 @@ export default function NorCalThrifting() {
 
       {/* ─── Map view ─────────────────────────────────────────────────────── */}
       {viewMode === 'map' && (
-        <MapView sales={filtered} />
+        <Suspense fallback={<LoadingFallback minHeight="400px" />}>
+          <MapView sales={filtered} />
+        </Suspense>
       )}
 
       {/* ─── Sale cards ───────────────────────────────────────────────────── */}
@@ -913,7 +936,11 @@ export default function NorCalThrifting() {
       </footer>
 
       {showSubmit && <SubmitModal onClose={() => setShowSubmit(false)} onSuccess={fetchSales} />}
-      {showAdmin && <AdminDashboard user={user} onClose={() => setShowAdmin(false)} />}
+      {showAdmin && (
+        <Suspense fallback={<LoadingFallback minHeight="100vh" />}>
+          <AdminDashboard user={user} onClose={() => setShowAdmin(false)} />
+        </Suspense>
+      )}
       {showAuth && (
         <AuthModal
           mode={authMode}
@@ -943,774 +970,3 @@ export default function NorCalThrifting() {
     </div>
   );
 }
-
-// ─── Map view ───────────────────────────────────────────────────────────────
-
-const SACRAMENTO = [38.5816, -121.4944];
-
-function makePin(fill) {
-  return L.divIcon({
-    html: `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="36" viewBox="0 0 26 36">
-      <path d="M13 0C5.82 0 0 5.82 0 13c0 9.1 13 23 13 23S26 22.1 26 13C26 5.82 20.18 0 13 0z" fill="${fill}" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>
-      <circle cx="13" cy="13" r="5.5" fill="rgba(255,255,255,0.9)"/>
-    </svg>`,
-    iconSize: [26, 36],
-    iconAnchor: [13, 36],
-    popupAnchor: [0, -38],
-    className: '',
-  });
-}
-
-// Orange-brown for sales, teal-green for thrift stores
-const saleIcon    = makePin('#A8542C');
-const thriftIcon  = makePin('#3A8A6E');
-
-function FitBounds({ markers }) {
-  const map = useMap();
-  const key = JSON.stringify(markers);
-  useEffect(() => {
-    if (markers.length > 0) {
-      map.fitBounds(markers, { padding: [40, 40], maxZoom: 13 });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-  return null;
-}
-
-function MapView({ sales }) {
-  const geocoded = sales.filter(s => s.lat != null && s.lng != null);
-  const markerPositions = geocoded.map(s => [s.lat, s.lng]);
-  const unmapped = sales.length - geocoded.length;
-  const thriftCount = geocoded.filter(s => s.sale_type === 'thrift_store').length;
-  const saleCount   = geocoded.length - thriftCount;
-
-  return (
-    <div style={{ position: 'relative', zIndex: 1, maxWidth: '1100px', margin: '0 auto', padding: '0 24px' }}>
-      {/* Legend */}
-      <div style={{ display: 'flex', gap: '16px', marginBottom: '8px', justifyContent: 'flex-end' }}>
-        {saleCount > 0 && (
-          <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#6B5444', fontWeight: 600 }}>
-            <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#A8542C' }} /> Sales
-          </span>
-        )}
-        {thriftCount > 0 && (
-          <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#6B5444', fontWeight: 600 }}>
-            <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#3A8A6E' }} /> Thrift Stores
-          </span>
-        )}
-      </div>
-
-      <div style={{ borderRadius: '18px', overflow: 'hidden', border: '1px solid #E8DCC8', boxShadow: '0 2px 12px rgba(61,46,38,0.05)' }}>
-        <MapContainer
-          center={SACRAMENTO}
-          zoom={10}
-          style={{ height: 'clamp(400px, 60vh, 640px)', width: '100%' }}
-          scrollWheelZoom
-        >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          />
-          {markerPositions.length > 0 && <FitBounds markers={markerPositions} />}
-          {geocoded.map(sale => {
-            const isThrift = sale.sale_type === 'thrift_store';
-            return (
-              <Marker key={sale.id} position={[sale.lat, sale.lng]} icon={isThrift ? thriftIcon : saleIcon}>
-                <Popup maxWidth={260}>
-                  <div style={{ fontFamily: "'Nunito', system-ui, sans-serif", padding: '2px 0' }}>
-                    <p style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: '15px', margin: '0 0 6px', color: '#2C1F17', lineHeight: 1.2 }}>
-                      {sale.title}
-                    </p>
-                    {isThrift ? (
-                      <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#6B5444' }}>
-                        {sale.address}<br />{sale.city}, {sale.state} {sale.zip}
-                      </p>
-                    ) : (
-                      <>
-                        <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#6B5444' }}>
-                          {sale.city}, {sale.state} · {formatDate(sale.sale_date)}
-                        </p>
-                        {(sale.start_time || sale.end_time) && (
-                          <p style={{ margin: '0 0 4px', fontSize: '12px', color: '#9A8472' }}>
-                            {[formatTime(sale.start_time), formatTime(sale.end_time)].filter(Boolean).join(' – ')}
-                          </p>
-                        )}
-                        {sale.location_approx && (
-                          <p style={{ margin: '0 0 8px', fontSize: '11px', color: '#9A8472', fontStyle: 'italic' }}>
-                            Pin is approximate — exact address not listed
-                          </p>
-                        )}
-                      </>
-                    )}
-                    <a
-                      href={buildMapUrl(sale)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '5px',
-                        padding: '6px 12px', borderRadius: '8px',
-                        background: isThrift ? '#3A8A6E' : '#A8542C', color: '#FFFCF6',
-                        textDecoration: 'none', fontSize: '12px', fontWeight: 700,
-                      }}
-                    >
-                      <MapPin size={12} /> Open in Maps
-                    </a>
-                  </div>
-                </Popup>
-              </Marker>
-            );
-          })}
-        </MapContainer>
-      </div>
-      {unmapped > 0 && (
-        <p style={{ margin: '10px 0 0', fontSize: '13px', color: '#9A8472', textAlign: 'right' }}>
-          {unmapped} {unmapped === 1 ? 'listing' : 'listings'} not shown — no coordinates available
-        </p>
-      )}
-    </div>
-  );
-}
-
-// ─── Auth Modal ─────────────────────────────────────────────────────────────
-function AuthModal({ mode, onSwitchMode, onSuccess, onClose }) {
-  const [name, setName]         = useState('');
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError]       = useState(null);
-
-  const isSignUp = mode === 'signup';
-
-  const submit = async () => {
-    setError(null);
-    setSubmitting(true);
-    try {
-      const body = isSignUp ? { name, email, password } : { email, password };
-      const res = await fetch(`${API_URL}/auth/${isSignUp ? 'signup' : 'signin'}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        const msgs = {
-          missing_fields:     'Please fill in all fields.',
-          invalid_email:      'Enter a valid email address.',
-          password_too_short: 'Password must be at least 8 characters.',
-          email_taken:        'That email is already registered. Sign in instead?',
-          invalid_credentials:'Incorrect email or password.',
-          invalid_name:       'Name must be between 1 and 80 characters.',
-        };
-        throw new Error(msgs[data.error] || 'Something went wrong. Try again.');
-      }
-      onSuccess(data.user);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleKey = (e) => { if (e.key === 'Enter') submit(); };
-
-  return (
-    <div onClick={onClose} style={{
-      position: "fixed", inset: 0, background: "rgba(44, 31, 23, 0.5)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 100, padding: "20px", backdropFilter: "blur(4px)",
-    }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: "#FFFCF6", borderRadius: "20px", padding: "28px",
-        maxWidth: "400px", width: "100%",
-        boxShadow: "0 20px 60px rgba(44, 31, 23, 0.3)",
-      }}>
-        {/* Tabs */}
-        <div style={{ display: "flex", marginBottom: "24px", borderBottom: "1px solid #E8DCC8" }}>
-          {['signin', 'signup'].map(m => (
-            <button key={m} onClick={() => { onSwitchMode(m); setError(null); }} style={{
-              flex: 1, padding: "10px", border: "none", background: "none",
-              fontFamily: "inherit", fontSize: "15px", fontWeight: 700, cursor: "pointer",
-              color: mode === m ? "#A8542C" : "#9A8472",
-              borderBottom: mode === m ? "2px solid #A8542C" : "2px solid transparent",
-              marginBottom: "-1px", transition: "all 0.15s",
-            }}>
-              {m === 'signin' ? 'Sign in' : 'Create account'}
-            </button>
-          ))}
-          <button onClick={onClose} style={{
-            background: "none", border: "none", cursor: "pointer", color: "#9A8472", padding: "8px",
-          }}>
-            <X size={20} />
-          </button>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          {isSignUp && (
-            <Field label="Your name" value={name} onChange={setName} placeholder="First Last" onKeyDown={handleKey} />
-          )}
-          <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" onKeyDown={handleKey} />
-          <Field label="Password" type="password" value={password} onChange={setPassword}
-            placeholder={isSignUp ? "At least 8 characters" : "Your password"} onKeyDown={handleKey} />
-
-          {error && (
-            <div style={{
-              padding: "10px 14px", borderRadius: "8px",
-              background: "rgba(198, 107, 61, 0.1)", color: "#A8542C", fontSize: "13px",
-            }}>
-              {error}
-            </div>
-          )}
-
-          <button onClick={submit} disabled={submitting} style={{
-            marginTop: "4px", padding: "14px", borderRadius: "12px",
-            background: "#A8542C", color: "#FFFCF6", border: "none",
-            fontSize: "16px", fontWeight: 700, fontFamily: "inherit",
-            cursor: submitting ? "wait" : "pointer", opacity: submitting ? 0.6 : 1,
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-          }}>
-            {submitting && <Loader2 size={16} className="spin" />}
-            {submitting ? (isSignUp ? 'Creating account…' : 'Signing in…') : (isSignUp ? 'Create account' : 'Sign in')}
-          </button>
-
-          <p style={{ textAlign: "center", fontSize: "13px", color: "#9A8472", margin: 0 }}>
-            {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
-            <button onClick={() => { onSwitchMode(isSignUp ? 'signin' : 'signup'); setError(null); }} style={{
-              background: "none", border: "none", color: "#A8542C", fontWeight: 700,
-              cursor: "pointer", fontSize: "13px", fontFamily: "inherit", padding: 0,
-            }}>
-              {isSignUp ? 'Sign in' : 'Sign up'}
-            </button>
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Submit modal ───────────────────────────────────────────────────────────
-function SubmitModal({ onClose, onSuccess }) {
-  const [form, setForm] = useState({
-    title: '', address: '', city: '', state: 'CA', zip: '',
-    sale_date: '', start_time: '08:00', end_time: '14:00',
-    description: '', categories: '',
-  });
-  const [photoFiles, setPhotoFiles]       = useState([]);
-  const [photoPreviews, setPhotoPreviews] = useState([]);
-  const [submitting, setSubmitting] = useState(false);
-  const [uploadStep, setUploadStep] = useState(false);
-  const [error, setError]           = useState(null);
-  const [done, setDone]             = useState(false);
-
-  const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  const handlePhotoChange = (e) => {
-    const files = Array.from(e.target.files || []).slice(0, 5);
-    photoPreviews.forEach(u => URL.revokeObjectURL(u));
-    setPhotoFiles(files);
-    setPhotoPreviews(files.map(f => URL.createObjectURL(f)));
-  };
-
-  const removePhoto = (idx) => {
-    URL.revokeObjectURL(photoPreviews[idx]);
-    setPhotoFiles(prev => prev.filter((_, i) => i !== idx));
-    setPhotoPreviews(prev => prev.filter((_, i) => i !== idx));
-  };
-
-  const submit = async () => {
-    setError(null);
-    setSubmitting(true);
-    try {
-      let photo_urls = [];
-      if (photoFiles.length > 0) {
-        setUploadStep(true);
-        const fd = new FormData();
-        photoFiles.forEach(f => fd.append('photos', f));
-        const upRes = await fetch(`${API_URL}/uploads`, {
-          method: 'POST', credentials: 'include', body: fd,
-        });
-        if (!upRes.ok) {
-          const err = await upRes.json().catch(() => ({}));
-          throw new Error(err.error || 'photo_upload_failed');
-        }
-        const upData = await upRes.json();
-        photo_urls = upData.urls || [];
-        setUploadStep(false);
-      }
-
-      const res = await fetch(`${API_URL}/sales`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          ...form,
-          categories: form.categories.split(',').map(s => s.trim()).filter(Boolean),
-          photo_urls,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'submission failed');
-      }
-      setDone(true);
-      setTimeout(() => { onSuccess?.(); onClose(); }, 1200);
-    } catch (err) {
-      setError(err.message);
-      setUploadStep(false);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div onClick={onClose} style={{
-      position: "fixed", inset: 0, background: "rgba(44, 31, 23, 0.5)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 100, padding: "20px", backdropFilter: "blur(4px)",
-    }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: "#FFFCF6", borderRadius: "20px", padding: "28px",
-        maxWidth: "520px", width: "100%", maxHeight: "90vh", overflowY: "auto",
-        boxShadow: "0 20px 60px rgba(44, 31, 23, 0.3)",
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-          <h2 style={{ fontFamily: "'Fraunces', serif", fontSize: "26px", fontWeight: 600, margin: 0, color: "#2C1F17" }}>
-            Add Your Sale
-          </h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#9A8472" }}>
-            <X size={24} />
-          </button>
-        </div>
-
-        {done ? (
-          <div style={{ textAlign: "center", padding: "20px 0", color: "#5A6E50", fontSize: "16px" }}>
-            <Sparkles size={32} style={{ marginBottom: "8px" }} />
-            <p style={{ margin: 0, fontFamily: "'Fraunces', serif", fontSize: "20px", fontStyle: "italic" }}>
-              Your sale is up. Happy treasure hunting!
-            </p>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <Field label="Sale title *" value={form.title} onChange={v => update('title', v)} placeholder="e.g., Multi-Family Garage Sale" />
-            <Field label="Street address *" value={form.address} onChange={v => update('address', v)} placeholder="123 Main St" />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px", gap: "10px" }}>
-              <Field label="City *" value={form.city} onChange={v => update('city', v)} />
-              <Field label="State *" value={form.state} onChange={v => update('state', v.toUpperCase().slice(0, 2))} />
-              <Field label="ZIP" value={form.zip} onChange={v => update('zip', v)} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
-              <Field label="Date *" type="date" value={form.sale_date} onChange={v => update('sale_date', v)} />
-              <Field label="Start time" type="time" value={form.start_time} onChange={v => update('start_time', v)} />
-              <Field label="End time" type="time" value={form.end_time} onChange={v => update('end_time', v)} />
-            </div>
-            <Field label="Description" value={form.description} onChange={v => update('description', v)} multiline placeholder="What's for sale, special details..." />
-            <Field label="Categories (comma-separated)" value={form.categories} onChange={v => update('categories', v)} placeholder="Furniture, Vintage, Tools" />
-
-            {/* Photo upload */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              <span style={{ fontSize: "13px", fontWeight: 600, color: "#6B5444" }}>
-                Photos <span style={{ fontWeight: 400, color: "#9A8472" }}>(optional · up to 5)</span>
-              </span>
-              <label style={{
-                display: "flex", alignItems: "center", gap: "8px",
-                padding: "10px 14px", borderRadius: "10px",
-                border: "1px dashed #C9B89E", background: "#FBF5EC",
-                cursor: "pointer", fontSize: "14px", color: "#9A8472", fontFamily: "inherit",
-              }}>
-                <Camera size={16} />
-                <span>{photoFiles.length > 0 ? `${photoFiles.length} photo${photoFiles.length > 1 ? 's' : ''} selected — click to change` : 'Choose photos…'}</span>
-                <input type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handlePhotoChange} />
-              </label>
-              {photoPreviews.length > 0 && (
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  {photoPreviews.map((url, i) => (
-                    <div key={i} style={{ position: "relative" }}>
-                      <img src={url} alt="" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: "8px", border: "1px solid #E8DCC8" }} />
-                      <button onClick={() => removePhoto(i)} style={{
-                        position: "absolute", top: "-6px", right: "-6px",
-                        width: "20px", height: "20px", borderRadius: "50%",
-                        background: "#A8542C", color: "#FFFCF6", border: "none",
-                        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
-                      }}>
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {error && (
-              <div style={{ padding: "10px 14px", borderRadius: "8px", background: "rgba(198, 107, 61, 0.1)", color: "#A8542C", fontSize: "13px" }}>
-                {error}
-              </div>
-            )}
-
-            <button onClick={submit} disabled={submitting} style={{
-              marginTop: "8px", padding: "14px", borderRadius: "12px",
-              background: "#A8542C", color: "#FFFCF6", border: "none",
-              fontSize: "16px", fontWeight: 700, fontFamily: "inherit",
-              cursor: submitting ? "wait" : "pointer", opacity: submitting ? 0.6 : 1,
-              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-            }}>
-              {submitting && <Loader2 size={16} className="spin" />}
-              {uploadStep ? 'Uploading photos…' : submitting ? 'Posting…' : 'Post Sale'}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, value, onChange, placeholder, type = 'text', multiline = false, onKeyDown }) {
-  const Tag = multiline ? 'textarea' : 'input';
-  return (
-    <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "13px", fontWeight: 600, color: "#6B5444" }}>
-      {label}
-      <Tag type={type} value={value} placeholder={placeholder}
-        onChange={e => onChange(e.target.value)}
-        onKeyDown={onKeyDown}
-        rows={multiline ? 3 : undefined}
-        style={{
-          padding: "10px 12px", borderRadius: "10px",
-          border: "1px solid #E8DCC8", background: "#FBF5EC",
-          fontFamily: "inherit", fontSize: "14px", color: "#3D2E26",
-          fontWeight: 400, resize: "vertical",
-        }}
-      />
-    </label>
-  );
-}
-
-// ─── Admin Dashboard ────────────────────────────────────────────────────────
-function AdminDashboard({ user, onClose }) {
-  const [tab, setTab]               = useState('listings');
-  const [stats, setStats]           = useState(null);
-  const [sales, setSales]           = useState([]);
-  const [users, setUsers]           = useState([]);
-  const [salesFilter, setSalesFilter] = useState('all');
-  const [loading, setLoading]       = useState(false);
-  const [fetchError, setFetchError] = useState(null);
-  const [scraperBusy, setScraperBusy] = useState(false);
-  const [scraperResult, setScraperResult] = useState(null);
-
-  const loadStats = useCallback(() => {
-    fetch(`${API_URL}/admin/stats`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => d && setStats(d))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => { loadStats(); }, [loadStats]);
-
-  useEffect(() => {
-    setLoading(true);
-    setFetchError(null);
-    if (tab === 'listings') {
-      const qs = salesFilter !== 'all' ? `?status=${salesFilter}` : '';
-      fetch(`${API_URL}/admin/sales${qs}`, { credentials: 'include' })
-        .then(r => {
-          if (!r.ok) { setFetchError(`Error ${r.status}`); return null; }
-          return r.json();
-        })
-        .then(d => d && setSales(d.sales || []))
-        .catch(err => setFetchError(err.message))
-        .finally(() => setLoading(false));
-    } else if (tab === 'users') {
-      fetch(`${API_URL}/admin/users`, { credentials: 'include' })
-        .then(r => {
-          if (!r.ok) { setFetchError(`Error ${r.status}`); return null; }
-          return r.json();
-        })
-        .then(d => d && setUsers(d.users || []))
-        .catch(err => setFetchError(err.message))
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
-  }, [tab, salesFilter]);
-
-  const patchSale = async (id, status) => {
-    await fetch(`${API_URL}/admin/sales/${id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      credentials: 'include', body: JSON.stringify({ status }),
-    }).catch(() => {});
-    setSales(prev => prev.map(s => s.id === id ? { ...s, status } : s));
-    loadStats();
-  };
-
-  const patchUser = async (id, role) => {
-    await fetch(`${API_URL}/admin/users/${id}/role`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      credentials: 'include', body: JSON.stringify({ role }),
-    }).catch(() => {});
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, role } : u));
-  };
-
-  const runScraper = async () => {
-    setScraperBusy(true);
-    setScraperResult(null);
-    try {
-      const res = await fetch(`${API_URL}/admin/refresh`, { method: 'POST', credentials: 'include' });
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : { ok: false, error: 'Empty response' };
-      setScraperResult(data);
-      loadStats();
-    } catch (err) {
-      setScraperResult({ ok: false, error: err.message || 'Request failed' });
-    }
-    setScraperBusy(false);
-  };
-
-  const badge = (value) => {
-    const map = {
-      active:   ['#5A6E50', 'rgba(90,110,80,0.12)'],
-      pending:  ['#8C6B1F', 'rgba(140,107,31,0.12)'],
-      rejected: ['#8C3A2A', 'rgba(140,58,42,0.12)'],
-      admin:    ['#A8542C', 'rgba(168,84,44,0.12)'],
-      customer: ['#6B5444', 'rgba(107,84,68,0.1)'],
-    };
-    const [color, bg] = map[value] || ['#666', '#eee'];
-    return (
-      <span style={{ padding: '2px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, color, background: bg }}>
-        {value}
-      </span>
-    );
-  };
-
-  const actionBtn = (color, label, onClick) => (
-    <button onClick={onClick} style={{
-      padding: '4px 10px', borderRadius: '6px', border: 'none',
-      background: color + '22', color, fontSize: '12px', fontWeight: 700,
-      fontFamily: 'inherit', cursor: 'pointer',
-    }}>{label}</button>
-  );
-
-  const TABS = [
-    { key: 'listings', label: 'Listings', icon: <List size={14} /> },
-    { key: 'users',    label: 'Users',    icon: <Users size={14} /> },
-    { key: 'scraper',  label: 'Scraper',  icon: <RefreshCw size={14} /> },
-  ];
-
-  return (
-    <div onClick={onClose} style={{
-      position: 'fixed', inset: 0, background: 'rgba(44, 31, 23, 0.6)',
-      display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-      zIndex: 300, padding: '20px', backdropFilter: 'blur(4px)', overflowY: 'auto',
-    }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: '#FFFCF6', borderRadius: '20px', padding: '28px',
-        maxWidth: '960px', width: '100%', marginTop: '20px',
-        boxShadow: '0 20px 60px rgba(44, 31, 23, 0.3)',
-      }}>
-
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h2 style={{ fontFamily: "'Fraunces', serif", fontSize: '26px', fontWeight: 600, margin: 0, color: '#2C1F17', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Shield size={20} color="#A8542C" /> Admin Dashboard
-          </h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9A8472' }}>
-            <X size={24} />
-          </button>
-        </div>
-
-        {/* Stats */}
-        {stats && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
-            {[
-              { label: 'Total sales',      value: stats.totalSales },
-              { label: 'Pending review',   value: stats.pendingSales },
-              { label: 'Registered users', value: stats.totalUsers },
-              { label: 'Last scraper run', value: stats.lastScraperRun
-                  ? new Date(stats.lastScraperRun.replace(' ', 'T')).toLocaleDateString()
-                  : 'Never' },
-            ].map(({ label, value }) => (
-              <div key={label} style={{ background: '#FBF5EC', border: '1px solid #E8DCC8', borderRadius: '12px', padding: '14px 16px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#9A8472', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>{label}</div>
-                <div style={{ fontSize: '22px', fontWeight: 700, color: '#2C1F17', fontFamily: "'Fraunces', serif" }}>{value}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div style={{ display: 'flex', marginBottom: '20px', borderBottom: '1px solid #E8DCC8' }}>
-          {TABS.map(({ key, label, icon }) => (
-            <button key={key} onClick={() => setTab(key)} style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '10px 20px', border: 'none', background: 'none',
-              fontFamily: 'inherit', fontSize: '14px', fontWeight: 700, cursor: 'pointer',
-              color: tab === key ? '#A8542C' : '#9A8472',
-              borderBottom: tab === key ? '2px solid #A8542C' : '2px solid transparent',
-              marginBottom: '-1px', transition: 'color 0.15s',
-            }}>
-              {icon} {label}
-            </button>
-          ))}
-        </div>
-
-        {fetchError && (
-          <div style={{ padding: '14px 16px', borderRadius: '10px', marginBottom: '16px',
-            background: 'rgba(140,58,42,0.08)', border: '1px solid rgba(140,58,42,0.2)', color: '#8C3A2A', fontSize: '14px' }}>
-            <strong>Could not load data:</strong> {fetchError}
-            {fetchError.includes('401') || fetchError.includes('403')
-              ? ' — You may need to sign out and sign back in.'
-              : ' — Is the backend server running?'}
-          </div>
-        )}
-        {loading && (
-          <div style={{ textAlign: 'center', padding: '40px', color: '#9A8472' }}>
-            <Loader2 size={24} className="spin" />
-          </div>
-        )}
-
-        {/* ── Listings tab ── */}
-        {tab === 'listings' && !loading && (
-          <div>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-              {['all', 'pending', 'active', 'rejected'].map(f => (
-                <button key={f} onClick={() => setSalesFilter(f)} style={{
-                  padding: '5px 14px', borderRadius: '8px', border: '1px solid #E8DCC8',
-                  background: salesFilter === f ? '#A8542C' : '#FBF5EC',
-                  color: salesFilter === f ? '#FFFCF6' : '#6B5444',
-                  fontSize: '13px', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
-                  textTransform: 'capitalize',
-                }}>{f}</button>
-              ))}
-            </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid #E8DCC8', color: '#9A8472', textAlign: 'left' }}>
-                    {['Title', 'Location', 'Date', 'Status', 'Source', 'Actions'].map(h => (
-                      <th key={h} style={{ padding: '8px 12px', fontWeight: 700 }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sales.map(sale => (
-                    <tr key={sale.id} style={{ borderBottom: '1px solid #F0E6D6' }}>
-                      <td style={{ padding: '10px 12px', maxWidth: '200px' }}>
-                        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, color: '#2C1F17' }}>
-                          {sale.title}
-                        </span>
-                      </td>
-                      <td style={{ padding: '10px 12px', color: '#6B5444', whiteSpace: 'nowrap' }}>{sale.city}, {sale.state}</td>
-                      <td style={{ padding: '10px 12px', color: '#6B5444', whiteSpace: 'nowrap' }}>{sale.sale_date || '—'}</td>
-                      <td style={{ padding: '10px 12px' }}>{badge(sale.status)}</td>
-                      <td style={{ padding: '10px 12px', color: '#9A8472' }}>{sale.source}</td>
-                      <td style={{ padding: '10px 12px' }}>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          {sale.status !== 'active'   && actionBtn('#5A6E50', 'Approve', () => patchSale(sale.id, 'active'))}
-                          {sale.status !== 'rejected' && actionBtn('#8C3A2A', 'Reject',  () => patchSale(sale.id, 'rejected'))}
-                          {sale.status === 'active'   && actionBtn('#8C6B1F', 'Pending', () => patchSale(sale.id, 'pending'))}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {sales.length === 0 && (
-                    <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#9A8472' }}>No listings found.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* ── Users tab ── */}
-        {tab === 'users' && !loading && (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #E8DCC8', color: '#9A8472', textAlign: 'left' }}>
-                  {['Name', 'Email', 'Role', 'Joined', 'Actions'].map(h => (
-                    <th key={h} style={{ padding: '8px 12px', fontWeight: 700 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {users.map(u => (
-                  <tr key={u.id} style={{ borderBottom: '1px solid #F0E6D6' }}>
-                    <td style={{ padding: '10px 12px', fontWeight: 600, color: '#2C1F17' }}>{u.name}</td>
-                    <td style={{ padding: '10px 12px', color: '#6B5444' }}>{u.email}</td>
-                    <td style={{ padding: '10px 12px' }}>{badge(u.role)}</td>
-                    <td style={{ padding: '10px 12px', color: '#9A8472', whiteSpace: 'nowrap' }}>
-                      {u.created_at ? new Date(u.created_at.replace(' ', 'T')).toLocaleDateString() : '—'}
-                    </td>
-                    <td style={{ padding: '10px 12px' }}>
-                      {u.id !== user.id && (
-                        u.role === 'admin'
-                          ? actionBtn('#8C3A2A', 'Remove admin', () => patchUser(u.id, 'customer'))
-                          : actionBtn('#5A6E50', 'Make admin',   () => patchUser(u.id, 'admin'))
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {users.length === 0 && (
-                  <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#9A8472' }}>No users yet.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ── Scraper tab ── */}
-        {tab === 'scraper' && (
-          <div style={{ padding: '8px 0' }}>
-            <p style={{ color: '#6B5444', margin: '0 0 24px', fontSize: '15px', lineHeight: 1.6 }}>
-              Manually trigger the Craigslist + EstateSales.net scrapers. This normally runs on the configured cron schedule.
-            </p>
-            <button onClick={runScraper} disabled={scraperBusy} style={{
-              display: 'flex', alignItems: 'center', gap: '10px',
-              padding: '14px 28px', borderRadius: '12px', border: 'none',
-              background: scraperBusy ? '#C9B89E' : '#A8542C', color: '#FFFCF6',
-              fontSize: '16px', fontWeight: 700, fontFamily: 'inherit',
-              cursor: scraperBusy ? 'wait' : 'pointer',
-            }}>
-              {scraperBusy ? <Loader2 size={18} className="spin" /> : <RefreshCw size={18} />}
-              {scraperBusy ? 'Running scrapers…' : 'Run Scrapers Now'}
-            </button>
-            {scraperResult && (
-              <div style={{
-                marginTop: '20px', padding: '16px', borderRadius: '12px', fontSize: '13px',
-                background: scraperResult.ok ? 'rgba(90,110,80,0.08)' : 'rgba(140,58,42,0.08)',
-                border: `1px solid ${scraperResult.ok ? 'rgba(90,110,80,0.25)' : 'rgba(140,58,42,0.25)'}`,
-                color: scraperResult.ok ? '#5A6E50' : '#8C3A2A',
-              }}>
-                <strong>{scraperResult.ok ? 'Scraper completed.' : 'Scraper failed.'}</strong>
-                {scraperResult.ok
-                  ? <pre style={{ margin: '8px 0 0', fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'pre-wrap' }}>{JSON.stringify(scraperResult.result, null, 2)}</pre>
-                  : <span> {scraperResult.error || scraperResult.message}</span>
-                }
-              </div>
-            )}
-            {stats?.lastScraperRun && (
-              <p style={{ color: '#9A8472', fontSize: '13px', marginTop: '16px' }}>
-                Last run: {new Date(stats.lastScraperRun.replace(' ', 'T')).toLocaleString()}
-              </p>
-            )}
-          </div>
-        )}
-
-      </div>
-    </div>
-  );
-}
-
-// ─── Style helpers ──────────────────────────────────────────────────────────
-const btnStyle = (active, color, primary = false) => ({
-  display: "flex", alignItems: "center", gap: "8px",
-  padding: "0 20px", borderRadius: "12px", height: "52px",
-  background: primary ? color : (active ? color : "#FBF5EC"),
-  color: primary || active ? "#FFFCF6" : "#3D2E26",
-  border: "1px solid #E8DCC8",
-  fontSize: "15px", fontWeight: 600, fontFamily: "inherit",
-  cursor: "pointer", transition: "all 0.2s",
-  whiteSpace: "nowrap",
-});
-const selectStyle = {
-  padding: "8px 12px", borderRadius: "8px",
-  border: "1px solid #E8DCC8", background: "#FBF5EC",
-  fontFamily: "inherit", fontSize: "14px", color: "#3D2E26", cursor: "pointer",
-};

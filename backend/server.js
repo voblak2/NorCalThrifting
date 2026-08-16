@@ -28,6 +28,7 @@ import favoritesRoutes from './routes/favorites.js';
 import adminRoutes from './routes/admin.js';
 import uploadsRoutes from './routes/uploads.js';
 import { refreshAll } from './refresh.js';
+import { addDays } from './dateUtils.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT) || 3001;
@@ -73,7 +74,12 @@ app.use('/api/admin', adminRoutes);
 app.use('/api', uploadsRoutes);
 
 app.get('/api/health', async (req, res) => {
-  res.json({ ok: true, sales: await countSales(), now: new Date().toISOString() });
+  try {
+    res.json({ ok: true, sales: await countSales(), now: new Date().toISOString() });
+  } catch (err) {
+    console.error('[api] /health error:', err);
+    res.status(500).json({ ok: false, error: 'health_check_failed' });
+  }
 });
 
 app.get('/api/sales', async (req, res) => {
@@ -97,10 +103,15 @@ app.get('/api/sales', async (req, res) => {
 });
 
 app.get('/api/sales/:id', async (req, res) => {
-  const sale = await getSaleById(parseInt(req.params.id));
-  if (!sale) return res.status(404).json({ error: 'not_found' });
-  res.set('Cache-Control', 'public, max-age=300');
-  res.json({ sale });
+  try {
+    const sale = await getSaleById(parseInt(req.params.id));
+    if (!sale) return res.status(404).json({ error: 'not_found' });
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json({ sale });
+  } catch (err) {
+    console.error('[api] /sales/:id error:', err);
+    res.status(500).json({ error: 'lookup_failed' });
+  }
 });
 
 /**
@@ -192,11 +203,3 @@ app.listen(PORT, async () => {
   console.log(`NorCal Thrifting API listening on http://localhost:${PORT}`);
   console.log(`  ${await countSales()} sales currently in DB`);
 });
-
-// ---------- Helpers ----------
-
-function addDays(isoDate, n) {
-  const d = new Date(isoDate + 'T12:00:00');
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
