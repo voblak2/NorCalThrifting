@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { MapPin, Calendar, Clock, Tag, ExternalLink, ShoppingBag, ChevronLeft, Loader2, AlertCircle } from 'lucide-react';
-import { API_URL, API_ORIGIN, formatDate, formatTime, buildMapUrl } from './shared.js';
+import { API_URL, resolvePhotoUrl, formatDate, formatTime, buildMapUrl } from './shared.js';
 import { useSEO, SITE_URL, SITE_NAME } from './useSEO.js';
 
 const infoRowStyle = { display: "flex", alignItems: "flex-start", gap: "10px", color: "#6B5444", fontSize: "15px" };
@@ -77,7 +77,7 @@ export default function ListingDetail() {
   }, [id]);
 
   const isThrift = sale?.sale_type === 'thrift_store';
-  const image = sale?.photo_urls?.[0] ? `${API_ORIGIN}${sale.photo_urls[0]}` : undefined;
+  const image = sale?.photo_urls?.[0] ? resolvePhotoUrl(sale.photo_urls[0]) : undefined;
   const url = `${SITE_URL}/listing/${id}`;
 
   const title = sale

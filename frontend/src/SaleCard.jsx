@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { MapPin, Calendar, Clock, Tag, ExternalLink, Heart, ShoppingBag } from 'lucide-react';
-import { API_ORIGIN, formatDate, formatTime, buildMapUrl } from './shared.js';
+import { resolvePhotoUrl, formatDate, formatTime, buildMapUrl } from './shared.js';
 
 const infoRowStyle = { display: "flex", alignItems: "flex-start", gap: "10px", color: "#6B5444", fontSize: "14px" };
 
@@ -31,7 +31,7 @@ export default function SaleCard({
 
       {sale.photo_urls && sale.photo_urls.length > 0 && (
         <div style={{ margin: "-22px -22px 16px", height: "200px", position: "relative", flexShrink: 0 }}>
-          <img src={`${API_ORIGIN}${sale.photo_urls[0]}`} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img src={resolvePhotoUrl(sale.photo_urls[0])} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           {sale.photo_urls.length > 1 && (
             <span style={{
               position: "absolute", bottom: "8px", right: "8px",

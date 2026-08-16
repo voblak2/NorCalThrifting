@@ -11,6 +11,12 @@ export const API_URL = import.meta.env.VITE_API_URL || '/api';
 // the API's host whenever VITE_API_URL points at a different domain (e.g. Vercel + Render).
 export const API_ORIGIN = API_URL.startsWith('http') ? new URL(API_URL).origin : '';
 
+// Photo URLs are now absolute (Cloudflare R2). Older rows may still have the
+// legacy host-relative form ("/uploads/x.jpg") — resolve those against the API host.
+export function resolvePhotoUrl(url) {
+  return url.startsWith('http') ? url : `${API_ORIGIN}${url}`;
+}
+
 export function formatDate(s) {
   if (!s) return "Date TBD";
   const d = new Date(s + "T12:00:00");
