@@ -195,12 +195,13 @@ export async function findNearbyThriftStore(lat, lng, name, radiusMeters = 400) 
   );
 }
 
-// Generic cross-source duplicate finder — unlike findNearbyThriftStore()
-// above (tuned specifically for recognized chains at a wider 400m radius),
-// this matches ANY thrift-store row by name similarity within a tight
-// 150m radius, so it's safe to use for arbitrary independent stores
-// discovered by the OSM directory scraper or the Yelp scraper without a
-// keyword allowlist. Returns the matching row (deserialized) or null.
+// Generic duplicate finder — unlike findNearbyThriftStore() above (tuned
+// specifically for recognized chains at a wider 400m radius), this matches
+// ANY thrift-store row by name similarity within a tight 150m radius, so
+// it's safe to use for arbitrary independent stores without a keyword
+// allowlist (used by directory.js's node/way merge; written generically so
+// a future second store-discovery source could plug into the same check).
+// Returns the matching row (deserialized) or null.
 export async function findDuplicateThriftStore(lat, lng, name, radiusMeters = 150) {
   if (lat == null || lng == null || !name) return null;
   const latDeg = radiusMeters / 111000;
@@ -213,8 +214,8 @@ export async function findDuplicateThriftStore(lat, lng, name, radiusMeters = 15
   for (const row of result.rows) {
     if (row.lat == null || row.lng == null) continue;
     // Titles for every thrift-store-producing source follow the "Name —
-    // City" convention (see directory.js/yelp.js/seed-thrift-stores*.js) —
-    // splitting on the em dash recovers just the business name to compare.
+    // City" convention (see directory.js/seed-thrift-stores*.js) — splitting
+    // on the em dash recovers just the business name to compare.
     const storedName = String(row.title || '').split(' — ')[0];
     if (!sameStoreName(storedName, name)) continue;
     const dist = haversineMeters(lat, lng, row.lat, row.lng);
@@ -529,13 +530,6 @@ export async function getLastScraperRun() {
 export async function getLastDirectoryRefresh() {
   const result = await client.execute(
     `SELECT MAX(created_at) as last_run FROM sales WHERE source = 'osm_directory'`
-  );
-  return result.rows[0]?.last_run ?? null;
-}
-
-export async function getLastYelpRefresh() {
-  const result = await client.execute(
-    `SELECT MAX(created_at) as last_run FROM sales WHERE source = 'yelp'`
   );
   return result.rows[0]?.last_run ?? null;
 }

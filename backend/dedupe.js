@@ -1,8 +1,8 @@
 // dedupe.js — shared helpers for recognizing the same physical store across
-// different data sources/shapes (an OSM node vs the same store's building
-// way, OSM vs Yelp, etc.) and for judging which version of a listing has
-// more useful information. Used by db.js (matching) and the scrapers that
-// produce thrift-store rows (deciding what to do with a match).
+// different data shapes (an OSM node vs the same store's building way) or
+// data sources, and for judging which version of a listing has more useful
+// information. Used by db.js (matching) and the scrapers that produce
+// thrift-store rows (deciding what to do with a match).
 
 export function normalizeName(name) {
   return (name || '')
@@ -38,15 +38,15 @@ export function sameStoreName(a, b) {
 
 // Rough completeness score for a listing description, used to decide which
 // of two records for the same physical store to keep when sources overlap.
-// Descriptions embed "Phone: ..." / "Website: ..." / "Yelp: ..." as plain
-// text (see scrapers/directory.js and scrapers/yelp.js) rather than living
-// in dedicated columns, so scoring works by pattern match on that text
-// instead of on structured fields.
+// Descriptions embed "Phone: ..." / "Website: ..." as plain text (see
+// scrapers/directory.js's buildDescription()) rather than living in
+// dedicated columns, so scoring works by pattern match on that text instead
+// of on structured fields.
 export function descriptionCompleteness(description) {
   const d = description || '';
   let score = 0;
   if (/phone:/i.test(d)) score++;
-  if (/website:|yelp:/i.test(d)) score++;
+  if (/website:/i.test(d)) score++;
   if (/hours:/i.test(d)) score++;
   if (d.length > 60) score++;
   return score;

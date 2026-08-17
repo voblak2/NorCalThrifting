@@ -1,8 +1,9 @@
 // scrapers/storeDedupe.js — shared "is this store already known, and if so
 // what do we do about it" decision used by every scraper that can produce a
-// thrift-store row (OSM directory, Yelp), so a store discovered by more
-// than one source ends up as a single pin carrying the more complete data,
-// not several duplicate pins.
+// thrift-store row (currently just OSM directory, via its node+way merge —
+// written generically so a future second source can plug into the same
+// logic without rework), so a store discovered more than once ends up as a
+// single pin carrying the more complete data, not several duplicate pins.
 
 import { upsertSale, findDuplicateThriftStore, enrichThriftStoreDescription } from '../db.js';
 import { descriptionCompleteness } from '../dedupe.js';
