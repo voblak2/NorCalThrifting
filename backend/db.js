@@ -6,6 +6,7 @@
 // All exported functions are async. Schema is created on module load (top-level await).
 
 import { createClient } from '@libsql/client';
+import { sameStoreName } from './dedupe.js';
 
 const client = createClient({
   url:       process.env.TURSO_DATABASE_URL || 'file:./data/sales.db',
@@ -192,6 +193,45 @@ export async function findNearbyThriftStore(lat, lng, name, radiusMeters = 400) 
   return result.rows.some(row =>
     chainKeyword(row.title) === keyword && haversineMeters(lat, lng, row.lat, row.lng) < radiusMeters
   );
+}
+
+// Generic cross-source duplicate finder — unlike findNearbyThriftStore()
+// above (tuned specifically for recognized chains at a wider 400m radius),
+// this matches ANY thrift-store row by name similarity within a tight
+// 150m radius, so it's safe to use for arbitrary independent stores
+// discovered by the OSM directory scraper or the Yelp scraper without a
+// keyword allowlist. Returns the matching row (deserialized) or null.
+export async function findDuplicateThriftStore(lat, lng, name, radiusMeters = 150) {
+  if (lat == null || lng == null || !name) return null;
+  const latDeg = radiusMeters / 111000;
+  const lngDeg = radiusMeters / (111000 * Math.cos(lat * Math.PI / 180));
+  const result = await client.execute({
+    sql: `SELECT * FROM sales WHERE sale_type = 'thrift_store' AND lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?`,
+    args: [lat - latDeg, lat + latDeg, lng - lngDeg, lng + lngDeg],
+  });
+  let best = null, bestDist = Infinity;
+  for (const row of result.rows) {
+    if (row.lat == null || row.lng == null) continue;
+    // Titles for every thrift-store-producing source follow the "Name —
+    // City" convention (see directory.js/yelp.js/seed-thrift-stores*.js) —
+    // splitting on the em dash recovers just the business name to compare.
+    const storedName = String(row.title || '').split(' — ')[0];
+    if (!sameStoreName(storedName, name)) continue;
+    const dist = haversineMeters(lat, lng, row.lat, row.lng);
+    if (dist < radiusMeters && dist < bestDist) { best = row; bestDist = dist; }
+  }
+  return best ? deserialize(best) : null;
+}
+
+// Narrow, safe enrichment for merging a richer cross-source match into an
+// existing thrift-store row (see scrapers/storeDedupe.js) — deliberately
+// touches only description/categories, never source/source_id/lat/lng/title,
+// so it can never corrupt another source's row identity or position.
+export async function enrichThriftStoreDescription(id, { description, categories }) {
+  await client.execute({
+    sql: `UPDATE sales SET description = ?, categories = ? WHERE id = ?`,
+    args: [description, JSON.stringify(categories ?? []), id],
+  });
 }
 
 // ---------- Query ----------
@@ -489,6 +529,13 @@ export async function getLastScraperRun() {
 export async function getLastDirectoryRefresh() {
   const result = await client.execute(
     `SELECT MAX(created_at) as last_run FROM sales WHERE source = 'osm_directory'`
+  );
+  return result.rows[0]?.last_run ?? null;
+}
+
+export async function getLastYelpRefresh() {
+  const result = await client.execute(
+    `SELECT MAX(created_at) as last_run FROM sales WHERE source = 'yelp'`
   );
   return result.rows[0]?.last_run ?? null;
 }
