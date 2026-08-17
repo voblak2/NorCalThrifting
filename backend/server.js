@@ -11,6 +11,7 @@
 //   POST /api/auth/signout                — sign out
 //   GET  /api/favorites                   — current user's favorited sale IDs
 //   POST /api/favorites/:saleId           — toggle a favorite
+//   POST /api/suggestions                 — suggest a store for the directory (no auth)
 //   POST /api/admin/refresh               — trigger manual scraper run (admin)
 
 import 'dotenv/config';
@@ -20,7 +21,7 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import cron from 'node-cron';
-import { searchSales, getSaleById, upsertSale, countSales, getLastScraperRun } from './db.js';
+import { searchSales, getSaleById, upsertSale, countSales, getLastScraperRun, createStoreSuggestion } from './db.js';
 import { geocode } from './geocode.js';
 import { requireAuth } from './auth.js';
 import authRoutes from './routes/auth.js';
@@ -45,6 +46,20 @@ const submitLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// 3 store suggestions per IP per hour — this endpoint is deliberately open
+// (no sign-in required, unlike /api/sales above), so it leans on IP rate
+// limiting alone to keep it frictionless without being spam-open.
+const suggestLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  message: { error: 'too_many_suggestions' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Keep in sync with the dropdown in frontend/src/SuggestStoreModal.jsx.
+const STORE_TYPES = ['Thrift Store', 'Vintage Shop', 'Consignment Shop', 'Antique Store', 'Estate Sale Company', 'Other'];
 
 // ---------- Middleware ----------
 
@@ -165,6 +180,40 @@ app.post('/api/sales', submitLimiter, requireAuth, async (req, res) => {
     res.status(201).json({ ok: true, id: result.lastInsertRowid });
   } catch (err) {
     console.error('[api] submit error:', err);
+    res.status(500).json({ error: 'submit_failed' });
+  }
+});
+
+/**
+ * Crowdsourced "Suggest a Store" — no auth required, goes into a moderation
+ * queue (store_suggestions table) for an admin to review; never auto-added
+ * to the live directory.
+ */
+app.post('/api/suggestions', suggestLimiter, async (req, res) => {
+  const body = req.body || {};
+  const required = ['name', 'address', 'city', 'state'];
+  const missing = required.filter(k => !body[k]);
+  if (missing.length) {
+    return res.status(400).json({ error: 'missing_fields', fields: missing });
+  }
+  if (!/^[A-Za-z]{2}$/.test(body.state)) {
+    return res.status(400).json({ error: 'invalid_state' });
+  }
+
+  try {
+    const { id } = await createStoreSuggestion({
+      name:       String(body.name).slice(0, 200),
+      address:    String(body.address).slice(0, 200),
+      city:       String(body.city).slice(0, 80),
+      state:      body.state.toUpperCase(),
+      zip:        body.zip ? String(body.zip).slice(0, 10) : null,
+      website:    body.website ? String(body.website).slice(0, 300) : null,
+      store_type: STORE_TYPES.includes(body.store_type) ? body.store_type : 'Other',
+      notes:      body.notes ? String(body.notes).slice(0, 1000) : null,
+    });
+    res.status(201).json({ ok: true, id });
+  } catch (err) {
+    console.error('[api] suggestion submit error:', err);
     res.status(500).json({ error: 'submit_failed' });
   }
 });

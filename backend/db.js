@@ -65,6 +65,20 @@ const SCHEMA = [
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
   )`,
+  `CREATE TABLE IF NOT EXISTS store_suggestions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT    NOT NULL,
+    address      TEXT    NOT NULL,
+    city         TEXT    NOT NULL,
+    state        TEXT    NOT NULL,
+    zip          TEXT,
+    website      TEXT,
+    store_type   TEXT    NOT NULL DEFAULT 'Other',
+    notes        TEXT,
+    submitted_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    status       TEXT    NOT NULL DEFAULT 'pending'
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_suggestions_status ON store_suggestions(status)`,
 ];
 
 // Turso occasionally 502s transiently; without a retry here, that blip crashes
@@ -532,4 +546,45 @@ export async function getLastDirectoryRefresh() {
     `SELECT MAX(created_at) as last_run FROM sales WHERE source = 'osm_directory'`
   );
   return result.rows[0]?.last_run ?? null;
+}
+
+// ---------- Store suggestions (crowdsourced "Suggest a Store") ----------
+
+export async function createStoreSuggestion({ name, address, city, state, zip, website, store_type, notes }) {
+  const result = await client.execute({
+    sql: `INSERT INTO store_suggestions (name, address, city, state, zip, website, store_type, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [name, address, city, state, zip ?? null, website ?? null, store_type, notes ?? null],
+  });
+  return { id: Number(result.lastInsertRowid) };
+}
+
+export async function getStoreSuggestions({ status = 'pending' } = {}) {
+  const where = status && status !== 'all' ? 'WHERE status = ?' : '';
+  const args = status && status !== 'all' ? [status] : [];
+  const result = await client.execute({
+    sql: `SELECT * FROM store_suggestions ${where} ORDER BY submitted_at DESC LIMIT 500`,
+    args,
+  });
+  return result.rows;
+}
+
+export async function getStoreSuggestionById(id) {
+  const result = await client.execute({
+    sql: `SELECT * FROM store_suggestions WHERE id = ? LIMIT 1`,
+    args: [id],
+  });
+  return result.rows[0] ?? null;
+}
+
+export async function updateStoreSuggestionStatus(id, status) {
+  await client.execute({
+    sql: `UPDATE store_suggestions SET status = ? WHERE id = ?`,
+    args: [status, id],
+  });
+}
+
+export async function countPendingStoreSuggestions() {
+  const result = await client.execute(`SELECT COUNT(*) as n FROM store_suggestions WHERE status = 'pending'`);
+  return Number(result.rows[0]?.n ?? 0);
 }

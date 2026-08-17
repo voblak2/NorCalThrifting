@@ -1,12 +1,15 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, ShoppingBag, ChevronLeft, ExternalLink, Loader2 } from 'lucide-react';
+import { MapPin, ShoppingBag, ChevronLeft, ExternalLink, Loader2, Plus } from 'lucide-react';
 import { buildMapUrl } from './shared.js';
+import { btnStyle } from './styles.js';
 import { useSEO } from './useSEO.js';
 import { useSales } from './useSales.js';
+import SuggestStoreModal from './SuggestStoreModal.jsx';
 
 export default function ThriftDirectory() {
   const { sales, loading, error } = useSales('sale_type=thrift_store&limit=500');
+  const [showSuggest, setShowSuggest] = useState(false);
   const stores = useMemo(
     () => [...sales].sort((a, b) => a.city.localeCompare(b.city) || a.title.localeCompare(b.title)),
     [sales]
@@ -49,9 +52,15 @@ export default function ThriftDirectory() {
         }}>
           Thrift &amp; secondhand stores across Northern California
         </h1>
-        <p style={{ fontSize: "16px", color: "#6B5444", maxWidth: "640px", margin: "0 0 32px", lineHeight: 1.5 }}>
+        <p style={{ fontSize: "16px", color: "#6B5444", maxWidth: "640px", margin: "0 0 20px", lineHeight: 1.5 }}>
           Goodwill, Salvation Army, Habitat ReStore, and independent thrift, vintage, and antique shops around Sacramento and the Central Valley.
         </p>
+
+        <button onClick={() => setShowSuggest(true)} style={{ ...btnStyle(false, "#A8542C", true), marginBottom: "32px" }}>
+          <Plus size={18} /> Suggest a Store
+        </button>
+
+        {showSuggest && <SuggestStoreModal onClose={() => setShowSuggest(false)} />}
 
         {loading && (
           <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "#9A8472", padding: "20px 0" }}>

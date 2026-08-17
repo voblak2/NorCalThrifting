@@ -1,19 +1,24 @@
 // AdminDashboard.jsx — admin-only listings/users/scraper dashboard, split
 // out of norcal_thrifting.jsx and lazy-loaded (only admins ever open it).
 import { useState, useEffect, useCallback } from 'react';
-import { Shield, X, List, Users, RefreshCw, Loader2 } from 'lucide-react';
+import { Shield, X, List, Users, RefreshCw, Loader2, MessageSquarePlus, Check } from 'lucide-react';
 import { API_URL } from './shared.js';
+import ApproveSuggestionModal from './ApproveSuggestionModal.jsx';
 
 export default function AdminDashboard({ user, onClose }) {
   const [tab, setTab]               = useState('listings');
   const [stats, setStats]           = useState(null);
   const [sales, setSales]           = useState([]);
   const [users, setUsers]           = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestionsFilter, setSuggestionsFilter] = useState('pending');
   const [salesFilter, setSalesFilter] = useState('all');
   const [loading, setLoading]       = useState(false);
   const [fetchError, setFetchError] = useState(null);
   const [scraperBusy, setScraperBusy] = useState(false);
   const [scraperResult, setScraperResult] = useState(null);
+  const [approvingSuggestion, setApprovingSuggestion] = useState(null);
+  const [approvedNotice, setApprovedNotice] = useState(null);
 
   const loadStats = useCallback(() => {
     fetch(`${API_URL}/admin/stats`, { credentials: 'include' })
@@ -46,10 +51,19 @@ export default function AdminDashboard({ user, onClose }) {
         .then(d => d && setUsers(d.users || []))
         .catch(err => setFetchError(err.message))
         .finally(() => setLoading(false));
+    } else if (tab === 'suggestions') {
+      fetch(`${API_URL}/admin/suggestions?status=${suggestionsFilter}`, { credentials: 'include' })
+        .then(r => {
+          if (!r.ok) { setFetchError(`Error ${r.status}`); return null; }
+          return r.json();
+        })
+        .then(d => d && setSuggestions(d.suggestions || []))
+        .catch(err => setFetchError(err.message))
+        .finally(() => setLoading(false));
     } else {
       setLoading(false);
     }
-  }, [tab, salesFilter]);
+  }, [tab, salesFilter, suggestionsFilter]);
 
   const patchSale = async (id, status) => {
     await fetch(`${API_URL}/admin/sales/${id}`, {
@@ -66,6 +80,20 @@ export default function AdminDashboard({ user, onClose }) {
       credentials: 'include', body: JSON.stringify({ role }),
     }).catch(() => {});
     setUsers(prev => prev.map(u => u.id === id ? { ...u, role } : u));
+  };
+
+  const rejectSuggestion = async (id) => {
+    await fetch(`${API_URL}/admin/suggestions/${id}/reject`, { method: 'POST', credentials: 'include' }).catch(() => {});
+    setSuggestions(prev => prev.filter(s => s.id !== id));
+    loadStats();
+  };
+
+  const handleApproved = () => {
+    setSuggestions(prev => prev.filter(s => s.id !== approvingSuggestion.id));
+    setApprovingSuggestion(null);
+    setApprovedNotice(`"${approvingSuggestion.name}" was published to the directory.`);
+    setTimeout(() => setApprovedNotice(null), 4000);
+    loadStats();
   };
 
   const runScraper = async () => {
@@ -86,6 +114,7 @@ export default function AdminDashboard({ user, onClose }) {
   const badge = (value) => {
     const map = {
       active:   ['#5A6E50', 'rgba(90,110,80,0.12)'],
+      approved: ['#5A6E50', 'rgba(90,110,80,0.12)'],
       pending:  ['#8C6B1F', 'rgba(140,107,31,0.12)'],
       rejected: ['#8C3A2A', 'rgba(140,58,42,0.12)'],
       admin:    ['#A8542C', 'rgba(168,84,44,0.12)'],
@@ -108,9 +137,10 @@ export default function AdminDashboard({ user, onClose }) {
   );
 
   const TABS = [
-    { key: 'listings', label: 'Listings', icon: <List size={14} /> },
-    { key: 'users',    label: 'Users',    icon: <Users size={14} /> },
-    { key: 'scraper',  label: 'Scraper',  icon: <RefreshCw size={14} /> },
+    { key: 'listings',    label: 'Listings', icon: <List size={14} /> },
+    { key: 'users',       label: 'Users',    icon: <Users size={14} /> },
+    { key: 'suggestions', label: stats?.pendingSuggestions ? `Store Suggestions (${stats.pendingSuggestions})` : 'Store Suggestions', icon: <MessageSquarePlus size={14} /> },
+    { key: 'scraper',     label: 'Scraper',  icon: <RefreshCw size={14} /> },
   ];
 
   return (
@@ -137,10 +167,11 @@ export default function AdminDashboard({ user, onClose }) {
 
         {/* Stats */}
         {stats && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '24px' }}>
             {[
               { label: 'Total sales',      value: stats.totalSales },
               { label: 'Pending review',   value: stats.pendingSales },
+              { label: 'Store suggestions', value: stats.pendingSuggestions },
               { label: 'Registered users', value: stats.totalUsers },
               { label: 'Last scraper run', value: stats.lastScraperRun
                   ? new Date(stats.lastScraperRun.replace(' ', 'T')).toLocaleDateString()
@@ -273,6 +304,76 @@ export default function AdminDashboard({ user, onClose }) {
               </tbody>
             </table>
           </div>
+        )}
+
+        {/* ── Store Suggestions tab ── */}
+        {tab === 'suggestions' && (
+          <div>
+            {approvedNotice && (
+              <div style={{ padding: '12px 16px', borderRadius: '10px', marginBottom: '16px',
+                background: 'rgba(90,110,80,0.1)', border: '1px solid rgba(90,110,80,0.25)', color: '#5A6E50',
+                fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Check size={16} /> {approvedNotice}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              {['pending', 'approved', 'rejected', 'all'].map(f => (
+                <button key={f} onClick={() => setSuggestionsFilter(f)} style={{
+                  padding: '5px 14px', borderRadius: '8px', border: '1px solid #E8DCC8',
+                  background: suggestionsFilter === f ? '#A8542C' : '#FBF5EC',
+                  color: suggestionsFilter === f ? '#FFFCF6' : '#6B5444',
+                  fontSize: '13px', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+                  textTransform: 'capitalize',
+                }}>{f}</button>
+              ))}
+            </div>
+            {!loading && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #E8DCC8', color: '#9A8472', textAlign: 'left' }}>
+                      {['Store name', 'Type', 'Address', 'City', 'Submitted', 'Notes', 'Actions'].map(h => (
+                        <th key={h} style={{ padding: '8px 12px', fontWeight: 700 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {suggestions.map(s => (
+                      <tr key={s.id} style={{ borderBottom: '1px solid #F0E6D6' }}>
+                        <td style={{ padding: '10px 12px', fontWeight: 600, color: '#2C1F17', maxWidth: '160px' }}>{s.name}</td>
+                        <td style={{ padding: '10px 12px', color: '#6B5444', whiteSpace: 'nowrap' }}>{s.store_type}</td>
+                        <td style={{ padding: '10px 12px', color: '#6B5444' }}>{s.address}</td>
+                        <td style={{ padding: '10px 12px', color: '#6B5444', whiteSpace: 'nowrap' }}>{s.city}, {s.state}</td>
+                        <td style={{ padding: '10px 12px', color: '#9A8472', whiteSpace: 'nowrap' }}>
+                          {s.submitted_at ? new Date(s.submitted_at.replace(' ', 'T')).toLocaleDateString() : '—'}
+                        </td>
+                        <td style={{ padding: '10px 12px', color: '#6B5444', maxWidth: '220px' }}>{s.notes || '—'}</td>
+                        <td style={{ padding: '10px 12px' }}>
+                          {s.status === 'pending' ? (
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              {actionBtn('#5A6E50', 'Approve & Add', () => setApprovingSuggestion(s))}
+                              {actionBtn('#8C3A2A', 'Reject', () => rejectSuggestion(s.id))}
+                            </div>
+                          ) : badge(s.status)}
+                        </td>
+                      </tr>
+                    ))}
+                    {suggestions.length === 0 && (
+                      <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#9A8472' }}>No {suggestionsFilter !== 'all' ? suggestionsFilter : ''} suggestions.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {approvingSuggestion && (
+          <ApproveSuggestionModal
+            suggestion={approvingSuggestion}
+            onClose={() => setApprovingSuggestion(null)}
+            onApproved={handleApproved}
+          />
         )}
 
         {/* ── Scraper tab ── */}
