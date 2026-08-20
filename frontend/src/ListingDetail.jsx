@@ -55,26 +55,44 @@ function buildJsonLd(sale, url, image) {
   };
 }
 
+// Render's free tier can take 30-50s to cold-start (see keepalive/UptimeRobot
+// history) — give a real listing fetch more room than a default browser
+// timeout before treating it as a failure, so a slow-but-alive backend isn't
+// mistaken for a dead listing.
+const FETCH_TIMEOUT_MS = 12000;
+
 export default function ListingDetail() {
   const { id } = useParams();
   const [sale, setSale] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setNotFound(false);
+    setFetchError(false);
     setSale(null);
-    fetch(`${API_URL}/sales/${id}`, { credentials: 'include' })
+
+    fetch(`${API_URL}/sales/${id}`, { credentials: 'include', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
       .then(res => {
+        // Only a confirmed 404 means the listing genuinely doesn't exist —
+        // that's the one case that should ever produce a noindex tag below.
+        // Any other failure (5xx, network error, timeout, bad JSON) is a
+        // transient problem, not proof the listing is gone, so it must NOT
+        // be treated the same way.
         if (res.status === 404) { setNotFound(true); return null; }
-        if (!res.ok) throw new Error('bad status');
+        if (!res.ok) throw new Error(`bad status ${res.status}`);
         return res.json();
       })
-      .then(data => { if (data?.sale) setSale(data.sale); })
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false));
-  }, [id]);
+      .then(data => { if (!cancelled && data?.sale) setSale(data.sale); })
+      .catch(() => { if (!cancelled) setFetchError(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [id, retryTick]);
 
   const isThrift = sale?.sale_type === 'thrift_store';
   const image = sale?.photo_urls?.[0] ? resolvePhotoUrl(sale.photo_urls[0]) : undefined;
@@ -86,7 +104,9 @@ export default function ListingDetail() {
       : `${sale.title} — ${sale.city}, CA on ${formatDate(sale.sale_date)} | ${SITE_NAME}`
     : notFound
       ? `Listing not found | ${SITE_NAME}`
-      : undefined;
+      : fetchError
+        ? `Couldn't load listing | ${SITE_NAME}`
+        : undefined;
 
   const description = sale
     ? (sale.description?.slice(0, 155) || (isThrift
@@ -145,6 +165,29 @@ export default function ListingDetail() {
             }}>
               Browse all listings
             </Link>
+          </div>
+        )}
+
+        {!loading && fetchError && (
+          <div style={{
+            textAlign: "center", padding: "60px 20px",
+            background: "#FFFCF6", borderRadius: "20px", border: "1px dashed #E8DCC8",
+          }}>
+            <AlertCircle size={28} color="#C66B3D" style={{ marginBottom: "12px" }} />
+            <p style={{ fontFamily: "'Fraunces', serif", fontSize: "22px", fontStyle: "italic", color: "#6B5444", margin: "0 0 8px" }}>
+              Couldn't load this listing
+            </p>
+            <p style={{ color: "#9A8472", fontSize: "15px", margin: "0 0 20px" }}>
+              Something went wrong reaching the server. Please try again.
+            </p>
+            <button onClick={() => setRetryTick(t => t + 1)} style={{
+              display: "inline-flex", alignItems: "center", gap: "6px",
+              padding: "10px 18px", borderRadius: "10px",
+              background: "#A8542C", color: "#FFFCF6", border: "none", cursor: "pointer",
+              fontSize: "14px", fontWeight: 700, fontFamily: "inherit",
+            }}>
+              Try again
+            </button>
           </div>
         )}
 
