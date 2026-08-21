@@ -1,9 +1,10 @@
 // AdminDashboard.jsx — admin-only listings/users/scraper dashboard, split
 // out of norcal_thrifting.jsx and lazy-loaded (only admins ever open it).
 import { useState, useEffect, useCallback } from 'react';
-import { Shield, X, List, Users, RefreshCw, Loader2, MessageSquarePlus, Check } from 'lucide-react';
+import { Shield, X, List, Users, RefreshCw, Loader2, MessageSquarePlus, Check, Lock } from 'lucide-react';
 import { API_URL } from './shared.js';
 import ApproveSuggestionModal from './ApproveSuggestionModal.jsx';
+import TwoFactorSettings from './TwoFactorSettings.jsx';
 
 export default function AdminDashboard({ user, onClose }) {
   const [tab, setTab]               = useState('listings');
@@ -141,6 +142,7 @@ export default function AdminDashboard({ user, onClose }) {
     { key: 'users',       label: 'Users',    icon: <Users size={14} /> },
     { key: 'suggestions', label: stats?.pendingSuggestions ? `Store Suggestions (${stats.pendingSuggestions})` : 'Store Suggestions', icon: <MessageSquarePlus size={14} /> },
     { key: 'scraper',     label: 'Scraper',  icon: <RefreshCw size={14} /> },
+    { key: 'security',    label: 'Security', icon: <Lock size={14} /> },
   ];
 
   return (
@@ -412,6 +414,11 @@ export default function AdminDashboard({ user, onClose }) {
               </p>
             )}
           </div>
+        )}
+
+        {/* ── Security tab ── */}
+        {tab === 'security' && (
+          <TwoFactorSettings />
         )}
 
       </div>

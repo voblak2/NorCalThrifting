@@ -25,6 +25,8 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
     "node-cron": "^4.2.1",
+    "otplib": "^13.5.0",
+    "qrcode": "^1.5.4",
     "rss-parser": "^3.13.0",
     "sharp": "^0.35.3"
   },

@@ -1,4 +1,8 @@
 import { Router } from 'express';
+import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
+import { generateSecret, generateURI, verify as verifyTotp } from 'otplib';
+import QRCode from 'qrcode';
 import { requireAdmin } from '../auth.js';
 import {
   getAdminSales, updateSaleStatus,
@@ -6,11 +10,26 @@ import {
   countSales, countUsers, countPendingSales, getLastScraperRun,
   getStoreSuggestions, getStoreSuggestionById, updateStoreSuggestionStatus,
   countPendingStoreSuggestions, upsertSale,
+  getUserById, setTotpSecret, enableTotp, disableTotp,
 } from '../db.js';
 import { refreshAll } from '../refresh.js';
 import { geocode, geocodeApprox } from '../geocode.js';
 
 const router = Router();
+
+const TOTP_ISSUER = 'NorCal Thrifting';
+// Excludes 0/O/1/I/L — every character has to be told apart by ear or on a
+// low-quality printout of a code someone's copying by hand from a screen.
+const BACKUP_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+function generateBackupCode() {
+  let out = '';
+  for (let i = 0; i < 8; i++) {
+    if (i === 4) out += '-';
+    out += BACKUP_CODE_ALPHABET[crypto.randomInt(BACKUP_CODE_ALPHABET.length)];
+  }
+  return out;
+}
 
 // Store-suggestion "type" dropdown label → the `categories` tag vocabulary
 // the rest of the directory already uses (curated batch, OSM scraper) — kept
@@ -188,6 +207,87 @@ router.post('/suggestions/:id/reject', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[api] admin/suggestions reject error:', err);
     res.status(500).json({ error: 'reject_failed' });
+  }
+});
+
+// ─── Two-factor authentication (admin accounts only) ───────────────────────
+//
+// Setup is two calls: /2fa/setup stages a secret + QR code (2FA is NOT yet
+// enabled), then /2fa/confirm proves the admin actually scanned it correctly
+// before flipping totp_enabled on. A half-finished setup that never gets
+// confirmed just leaves an unused staged secret sitting in the DB — it has
+// no effect on login either way, since login only checks totp_enabled.
+
+router.get('/2fa/status', requireAdmin, async (req, res) => {
+  try {
+    const user = await getUserById(req.user.id);
+    const backupCodes = user.backup_codes ? JSON.parse(user.backup_codes) : [];
+    res.json({
+      enabled: !!user.totp_enabled,
+      backupCodesRemaining: user.totp_enabled ? backupCodes.length : 0,
+    });
+  } catch (err) {
+    console.error('[api] 2fa/status error:', err);
+    res.status(500).json({ error: 'status_failed' });
+  }
+});
+
+router.post('/2fa/setup', requireAdmin, async (req, res) => {
+  try {
+    const user = await getUserById(req.user.id);
+    const secret = generateSecret();
+    await setTotpSecret(user.id, secret);
+    const otpauthUrl = generateURI({ issuer: TOTP_ISSUER, label: user.email, secret });
+    const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
+    res.json({ secret, qrCodeDataUrl });
+  } catch (err) {
+    console.error('[api] 2fa/setup error:', err);
+    res.status(500).json({ error: 'setup_failed' });
+  }
+});
+
+router.post('/2fa/confirm', requireAdmin, async (req, res) => {
+  const { code } = req.body || {};
+  if (!code) return res.status(400).json({ error: 'missing_code' });
+  try {
+    const user = await getUserById(req.user.id);
+    if (!user.totp_secret) return res.status(400).json({ error: 'no_pending_setup' });
+
+    let ok = false;
+    try {
+      ok = (await verifyTotp({ secret: user.totp_secret, token: String(code).trim(), epochTolerance: 30 })).valid;
+    } catch {
+      ok = false;
+    }
+    if (!ok) return res.status(400).json({ error: 'invalid_code' });
+
+    // Shown to the admin exactly once in this response — only the bcrypt
+    // hashes are persisted, so there is no way to redisplay these later.
+    const backupCodes = Array.from({ length: 8 }, generateBackupCode);
+    const hashed = await Promise.all(backupCodes.map(c => bcrypt.hash(c, 10)));
+    await enableTotp(user.id, hashed);
+
+    res.json({ ok: true, backupCodes });
+  } catch (err) {
+    console.error('[api] 2fa/confirm error:', err);
+    res.status(500).json({ error: 'confirm_failed' });
+  }
+});
+
+// Requires the current password (not just an active session) so that a
+// hijacked/stolen session cookie alone can't strip 2FA off the account.
+router.post('/2fa/disable', requireAdmin, async (req, res) => {
+  const { password } = req.body || {};
+  if (!password) return res.status(400).json({ error: 'missing_password' });
+  try {
+    const user = await getUserById(req.user.id);
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'invalid_password' });
+    await disableTotp(user.id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[api] 2fa/disable error:', err);
+    res.status(500).json({ error: 'disable_failed' });
   }
 });
 

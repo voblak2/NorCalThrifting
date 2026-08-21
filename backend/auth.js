@@ -16,11 +16,29 @@ export function signToken(payload) {
   });
 }
 
+// A password check that still needs a TOTP/backup code before a real session
+// exists gets this instead of signToken() — short-lived, carries no role, and
+// is only ever returned in a JSON body (never set as the nct_token cookie),
+// so it can't itself be used to authenticate anywhere. The `purpose` claim is
+// belt-and-suspenders: requireAuth/optionalAuth below explicitly refuse any
+// token carrying it, so even a misplaced pending token can't slip through.
+export function signPendingTwoFactorToken(payload) {
+  return jwt.sign({ ...payload, purpose: '2fa_pending' }, secret(), { expiresIn: '5m' });
+}
+
+export function verifyPendingTwoFactorToken(token) {
+  const decoded = jwt.verify(token, secret());
+  if (decoded.purpose !== '2fa_pending') throw new Error('not_a_pending_2fa_token');
+  return decoded;
+}
+
 export function requireAuth(req, res, next) {
   const token = req.cookies?.nct_token;
   if (!token) return res.status(401).json({ error: 'not_authenticated' });
   try {
-    req.user = jwt.verify(token, secret());
+    const decoded = jwt.verify(token, secret());
+    if (decoded.purpose === '2fa_pending') throw new Error('pending_2fa_token_not_valid_here');
+    req.user = decoded;
     next();
   } catch {
     res.clearCookie('nct_token', {
@@ -42,7 +60,10 @@ export function requireAdmin(req, res, next) {
 export function optionalAuth(req, res, next) {
   const token = req.cookies?.nct_token;
   if (token) {
-    try { req.user = jwt.verify(token, secret()); } catch {}
+    try {
+      const decoded = jwt.verify(token, secret());
+      if (decoded.purpose !== '2fa_pending') req.user = decoded;
+    } catch {}
   }
   next();
 }

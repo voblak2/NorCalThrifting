@@ -228,9 +228,29 @@ Required fields: `title`, `address`, `city`, `state`, `sale_date`. Optional: `de
 | Endpoint | Description |
 |---|---|
 | `POST /api/auth/signup` | Create an account (`email`, `password`) — sets httpOnly session cookie |
-| `POST /api/auth/signin` | Sign in — sets httpOnly session cookie |
+| `POST /api/auth/signin` | Sign in. If the account is an admin with 2FA enabled, returns `{ requires2fa: true, tempToken }` instead of setting a cookie |
+| `POST /api/auth/verify-2fa` | Second step for a 2FA-enabled admin — `{ tempToken, code }`, `code` is either the 6-digit authenticator code or an `XXXX-XXXX` backup code; sets the session cookie on success |
 | `POST /api/auth/signout` | Clears the session cookie |
 | `GET /api/auth/me` | Current signed-in user, or 401 |
+
+#### Two-factor authentication (admin accounts only)
+
+TOTP-based 2FA (Google Authenticator / Authy compatible, via [otplib](https://www.npmjs.com/package/otplib)) can be enabled per-admin-account from the Admin Dashboard → Security tab. Regular user accounts never see this — `signin` only ever branches into the 2FA challenge for an account that is both `role === 'admin'` and has `totp_enabled` set.
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/admin/2fa/status` | Whether 2FA is enabled on the current admin, and how many backup codes remain |
+| `POST /api/admin/2fa/setup` | Stages a new TOTP secret, returns it plus a QR code data URL — does **not** enable 2FA yet |
+| `POST /api/admin/2fa/confirm` | `{ code }` — confirms the staged secret with a real 6-digit code, enables 2FA, and returns 8 backup codes **in plaintext, shown exactly once** (only their bcrypt hashes are ever stored) |
+| `POST /api/admin/2fa/disable` | `{ password }` — current password required, so a hijacked session cookie alone can't strip 2FA off the account |
+
+**Recovery, by design, requires direct DB access.** If an admin loses both their authenticator app and their backup codes, there is intentionally no "forgot 2FA" self-service flow (e.g. an email reset link) — that would just recreate the exact account-takeover-via-email risk 2FA exists to close. To recover, someone with direct production DB access must run:
+
+```sql
+UPDATE users SET totp_enabled = 0, totp_secret = NULL, backup_codes = NULL WHERE email = 'the-locked-out-admin@example.com';
+```
+
+against the Turso database (`turso db shell <db-name>`, or the Turso dashboard's SQL console). This clears 2FA entirely; the admin can then sign in with just their password and re-run setup from the dashboard if they want 2FA on again. There is no other recovery path — treat backup codes as the real safety net and tell the admin to store them somewhere durable (password manager, printed copy in a safe) the moment they're issued, since they're shown only once.
 
 ### Favorites *(requires sign-in)*
 

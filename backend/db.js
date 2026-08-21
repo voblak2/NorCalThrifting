@@ -109,6 +109,23 @@ try {
   if (!/duplicate column/i.test(err.message)) throw err;
 }
 
+// TOTP-based 2FA, admin accounts only. totp_secret is staged on 2fa/setup and
+// only takes effect once totp_enabled flips to 1 on 2fa/confirm — a half-finished
+// setup sitting in totp_secret never affects login. backup_codes is a JSON array
+// of bcrypt hashes, one per unused one-time code (used codes are removed, not
+// just marked, so "still present" always means "still redeemable").
+for (const stmt of [
+  `ALTER TABLE users ADD COLUMN totp_secret TEXT`,
+  `ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE users ADD COLUMN backup_codes TEXT`,
+]) {
+  try {
+    await client.execute(stmt);
+  } catch (err) {
+    if (!/duplicate column/i.test(err.message)) throw err;
+  }
+}
+
 // ---------- Insert / upsert ----------
 
 export async function upsertSale(sale) {
@@ -452,6 +469,43 @@ export async function getUserById(id) {
 export async function countUsers() {
   const result = await client.execute(`SELECT COUNT(*) as n FROM users`);
   return Number(result.rows[0]?.n ?? 0);
+}
+
+// ---------- 2FA (TOTP) ----------
+// Hashing/verifying the actual TOTP codes and backup codes stays in the route
+// layer (bcrypt, otplib) — same split as password_hash, where db.js only ever
+// stores/reads the hash and never touches plaintext or comparison logic.
+
+// Stages a new secret without enabling 2FA — takes effect only once
+// enableTotp() flips totp_enabled after the admin confirms a valid code.
+export async function setTotpSecret(userId, secret) {
+  await client.execute({
+    sql: `UPDATE users SET totp_secret = ? WHERE id = ?`,
+    args: [secret, userId],
+  });
+}
+
+export async function enableTotp(userId, hashedBackupCodes) {
+  await client.execute({
+    sql: `UPDATE users SET totp_enabled = 1, backup_codes = ? WHERE id = ?`,
+    args: [JSON.stringify(hashedBackupCodes), userId],
+  });
+}
+
+export async function disableTotp(userId) {
+  await client.execute({
+    sql: `UPDATE users SET totp_enabled = 0, totp_secret = NULL, backup_codes = NULL WHERE id = ?`,
+    args: [userId],
+  });
+}
+
+// Overwrites the stored backup-code hash list — used after a code is redeemed
+// (the redeemed hash removed) so it can never be reused.
+export async function updateBackupCodes(userId, hashedBackupCodes) {
+  await client.execute({
+    sql: `UPDATE users SET backup_codes = ? WHERE id = ?`,
+    args: [JSON.stringify(hashedBackupCodes), userId],
+  });
 }
 
 // ---------- Favorites ----------

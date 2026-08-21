@@ -11,7 +11,24 @@ export default function AuthModal({ mode, onSwitchMode, onSuccess, onClose }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]       = useState(null);
 
+  // Set only for a 2FA-enabled admin, once the password step succeeds — its
+  // presence is what switches the form into the "enter your code" step below.
+  const [tempToken, setTempToken] = useState(null);
+  const [code, setCode]           = useState('');
+
   const isSignUp = mode === 'signup';
+
+  const ERROR_MESSAGES = {
+    missing_fields:     'Please fill in all fields.',
+    invalid_email:      'Enter a valid email address.',
+    password_too_short: 'Password must be at least 8 characters.',
+    email_taken:        'That email is already registered. Sign in instead?',
+    invalid_credentials:'Incorrect email or password.',
+    invalid_name:       'Name must be between 1 and 80 characters.',
+    invalid_or_expired_token: 'That took too long — please sign in again.',
+    invalid_code:       'Incorrect code. Check your authenticator app and try again.',
+    too_many_attempts:  'Too many attempts. Please wait a few minutes and try again.',
+  };
 
   const submit = async () => {
     setError(null);
@@ -25,16 +42,10 @@ export default function AuthModal({ mode, onSwitchMode, onSuccess, onClose }) {
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!res.ok) {
-        const msgs = {
-          missing_fields:     'Please fill in all fields.',
-          invalid_email:      'Enter a valid email address.',
-          password_too_short: 'Password must be at least 8 characters.',
-          email_taken:        'That email is already registered. Sign in instead?',
-          invalid_credentials:'Incorrect email or password.',
-          invalid_name:       'Name must be between 1 and 80 characters.',
-        };
-        throw new Error(msgs[data.error] || 'Something went wrong. Try again.');
+      if (!res.ok) throw new Error(ERROR_MESSAGES[data.error] || 'Something went wrong. Try again.');
+      if (data.requires2fa) {
+        setTempToken(data.tempToken);
+        return;
       }
       onSuccess(data.user);
     } catch (err) {
@@ -44,7 +55,27 @@ export default function AuthModal({ mode, onSwitchMode, onSuccess, onClose }) {
     }
   };
 
-  const handleKey = (e) => { if (e.key === 'Enter') submit(); };
+  const submitCode = async () => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/verify-2fa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ tempToken, code }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(ERROR_MESSAGES[data.error] || 'Something went wrong. Try again.');
+      onSuccess(data.user);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleKey = (e) => { if (e.key === 'Enter') (tempToken ? submitCode() : submit()); };
 
   return (
     <div onClick={onClose} style={{
@@ -57,26 +88,70 @@ export default function AuthModal({ mode, onSwitchMode, onSuccess, onClose }) {
         maxWidth: "400px", width: "100%",
         boxShadow: "0 20px 60px rgba(44, 31, 23, 0.3)",
       }}>
-        {/* Tabs */}
-        <div style={{ display: "flex", marginBottom: "24px", borderBottom: "1px solid #E8DCC8" }}>
-          {['signin', 'signup'].map(m => (
-            <button key={m} onClick={() => { onSwitchMode(m); setError(null); }} style={{
-              flex: 1, padding: "10px", border: "none", background: "none",
-              fontFamily: "inherit", fontSize: "15px", fontWeight: 700, cursor: "pointer",
-              color: mode === m ? "#A8542C" : "#9A8472",
-              borderBottom: mode === m ? "2px solid #A8542C" : "2px solid transparent",
-              marginBottom: "-1px", transition: "all 0.15s",
-            }}>
-              {m === 'signin' ? 'Sign in' : 'Create account'}
+        {/* Tabs (hidden mid-2FA — that's a single linear step, not a sign in/up choice) */}
+        {tempToken ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px", borderBottom: "1px solid #E8DCC8", paddingBottom: "12px" }}>
+            <span style={{ fontSize: "15px", fontWeight: 700, color: "#2C1F17" }}>Two-factor authentication</span>
+            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#9A8472", padding: "8px" }}>
+              <X size={20} />
             </button>
-          ))}
-          <button onClick={onClose} style={{
-            background: "none", border: "none", cursor: "pointer", color: "#9A8472", padding: "8px",
-          }}>
-            <X size={20} />
-          </button>
-        </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", marginBottom: "24px", borderBottom: "1px solid #E8DCC8" }}>
+            {['signin', 'signup'].map(m => (
+              <button key={m} onClick={() => { onSwitchMode(m); setError(null); }} style={{
+                flex: 1, padding: "10px", border: "none", background: "none",
+                fontFamily: "inherit", fontSize: "15px", fontWeight: 700, cursor: "pointer",
+                color: mode === m ? "#A8542C" : "#9A8472",
+                borderBottom: mode === m ? "2px solid #A8542C" : "2px solid transparent",
+                marginBottom: "-1px", transition: "all 0.15s",
+              }}>
+                {m === 'signin' ? 'Sign in' : 'Create account'}
+              </button>
+            ))}
+            <button onClick={onClose} style={{
+              background: "none", border: "none", cursor: "pointer", color: "#9A8472", padding: "8px",
+            }}>
+              <X size={20} />
+            </button>
+          </div>
+        )}
 
+        {tempToken ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <p style={{ margin: 0, fontSize: "14px", color: "#6B5444", lineHeight: 1.5 }}>
+              Enter the 6-digit code from your authenticator app, or one of your backup codes.
+            </p>
+            <Field label="Code" value={code} onChange={setCode} placeholder="123456 or XXXX-XXXX" onKeyDown={handleKey} />
+
+            {error && (
+              <div style={{
+                padding: "10px 14px", borderRadius: "8px",
+                background: "rgba(198, 107, 61, 0.1)", color: "#A8542C", fontSize: "13px",
+              }}>
+                {error}
+              </div>
+            )}
+
+            <button onClick={submitCode} disabled={submitting} style={{
+              marginTop: "4px", padding: "14px", borderRadius: "12px",
+              background: "#A8542C", color: "#FFFCF6", border: "none",
+              fontSize: "16px", fontWeight: 700, fontFamily: "inherit",
+              cursor: submitting ? "wait" : "pointer", opacity: submitting ? 0.6 : 1,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+            }}>
+              {submitting && <Loader2 size={16} className="spin" />}
+              {submitting ? 'Verifying…' : 'Verify'}
+            </button>
+
+            <button onClick={() => { setTempToken(null); setCode(''); setError(null); }} style={{
+              background: "none", border: "none", color: "#9A8472", fontWeight: 600,
+              cursor: "pointer", fontSize: "13px", fontFamily: "inherit", padding: 0, textAlign: "center",
+            }}>
+              Back to sign in
+            </button>
+          </div>
+        ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           {isSignUp && (
             <Field label="Your name" value={name} onChange={setName} placeholder="First Last" onKeyDown={handleKey} />
@@ -115,6 +190,7 @@ export default function AuthModal({ mode, onSwitchMode, onSuccess, onClose }) {
             </button>
           </p>
         </div>
+        )}
       </div>
     </div>
   );

@@ -7,8 +7,13 @@
 //   POST /api/sales                       — submit a new sale (requires auth)
 //   GET  /api/auth/me                     — current session
 //   POST /api/auth/signup                 — create account
-//   POST /api/auth/signin                 — sign in
+//   POST /api/auth/signin                 — sign in (or start 2FA challenge for admins with it enabled)
+//   POST /api/auth/verify-2fa             — complete a 2FA challenge with a TOTP/backup code
 //   POST /api/auth/signout                — sign out
+//   GET  /api/admin/2fa/status            — current admin's 2FA status (admin)
+//   POST /api/admin/2fa/setup             — stage a new TOTP secret + QR code (admin)
+//   POST /api/admin/2fa/confirm           — confirm setup, enable 2FA, issue backup codes (admin)
+//   POST /api/admin/2fa/disable           — disable 2FA, requires current password (admin)
 //   GET  /api/favorites                   — current user's favorited sale IDs
 //   POST /api/favorites/:saleId           — toggle a favorite
 //   POST /api/suggestions                 — suggest a store for the directory (no auth)
