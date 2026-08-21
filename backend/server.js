@@ -9,6 +9,7 @@
 //   POST /api/auth/signup                 — create account
 //   POST /api/auth/signin                 — sign in (or start 2FA challenge for admins with it enabled)
 //   POST /api/auth/verify-2fa             — complete a 2FA challenge with a TOTP/backup code
+//   POST /api/auth/google                 — sign in / sign up via a verified Google ID token (regular users only)
 //   POST /api/auth/signout                — sign out
 //   GET  /api/admin/2fa/status            — current admin's 2FA status (admin)
 //   POST /api/admin/2fa/setup             — stage a new TOTP secret + QR code (admin)

@@ -114,10 +114,21 @@ try {
 // setup sitting in totp_secret never affects login. backup_codes is a JSON array
 // of bcrypt hashes, one per unused one-time code (used codes are removed, not
 // just marked, so "still present" always means "still redeemable").
+//
+// google_id is the Google OAuth subject ID for Sign In With Google. has_password
+// distinguishes "this account has a real password the user chose" (1, the default
+// — every pre-existing row already has one) from "created via Google with no
+// password" (0) — password_hash stays NOT NULL either way (a Google-only account
+// gets an unguessable random placeholder hash) so no existing column's
+// constraint has to change, but has_password is the real signal any future
+// change/reset-password UI should check before letting someone in via a
+// password at all.
 for (const stmt of [
   `ALTER TABLE users ADD COLUMN totp_secret TEXT`,
   `ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE users ADD COLUMN backup_codes TEXT`,
+  `ALTER TABLE users ADD COLUMN google_id TEXT`,
+  `ALTER TABLE users ADD COLUMN has_password INTEGER NOT NULL DEFAULT 1`,
 ]) {
   try {
     await client.execute(stmt);
@@ -125,6 +136,7 @@ for (const stmt of [
     if (!/duplicate column/i.test(err.message)) throw err;
   }
 }
+await client.execute(`CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)`);
 
 // ---------- Insert / upsert ----------
 
@@ -443,7 +455,10 @@ export async function createUser({ name, email, passwordHash, role = 'customer' 
       args: [name, email.toLowerCase(), passwordHash, role],
     });
     const id = Number(result.lastInsertRowid);
-    return { id, name, email: email.toLowerCase(), role };
+    // has_password isn't a column this INSERT sets explicitly — it always
+    // defaults to 1 for a real password/email signup — so this constructed
+    // return value states that directly rather than a re-fetch just for it.
+    return { id, name, email: email.toLowerCase(), role, has_password: 1 };
   } catch (err) {
     if (err.message?.includes('UNIQUE constraint failed')) throw new Error('email_taken');
     throw err;
@@ -464,6 +479,33 @@ export async function getUserById(id) {
     args: [id],
   });
   return result.rows.length ? result.rows[0] : null;
+}
+
+export async function getUserByGoogleId(googleId) {
+  const result = await client.execute({
+    sql: 'SELECT * FROM users WHERE google_id = ? LIMIT 1',
+    args: [googleId],
+  });
+  return result.rows.length ? result.rows[0] : null;
+}
+
+export async function linkGoogleId(userId, googleId) {
+  await client.execute({
+    sql: 'UPDATE users SET google_id = ? WHERE id = ?',
+    args: [googleId, userId],
+  });
+}
+
+// Google-only account — always role 'customer' (Google Sign-In can never
+// create or grant admin; see routes/auth.js). passwordHash is a caller-supplied
+// random placeholder, never a real password the user could enter.
+export async function createGoogleUser({ name, email, passwordHash, googleId }) {
+  const result = await client.execute({
+    sql: `INSERT INTO users (name, email, password_hash, role, google_id, has_password) VALUES (?, ?, ?, 'customer', ?, 0)`,
+    args: [name, email.toLowerCase(), passwordHash, googleId],
+  });
+  const id = Number(result.lastInsertRowid);
+  return { id, name, email: email.toLowerCase(), role: 'customer', google_id: googleId, has_password: 0 };
 }
 
 export async function countUsers() {

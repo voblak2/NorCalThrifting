@@ -1,8 +1,10 @@
 // AuthModal.jsx — sign in / create account modal, split out of norcal_thrifting.jsx.
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { API_URL } from './shared.js';
 import Field from './Field.jsx';
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 export default function AuthModal({ mode, onSwitchMode, onSuccess, onClose }) {
   const [name, setName]         = useState('');
@@ -10,6 +12,7 @@ export default function AuthModal({ mode, onSwitchMode, onSuccess, onClose }) {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]       = useState(null);
+  const googleButtonRef = useRef(null);
 
   // Set only for a 2FA-enabled admin, once the password step succeeds — its
   // presence is what switches the form into the "enter your code" step below.
@@ -28,6 +31,11 @@ export default function AuthModal({ mode, onSwitchMode, onSuccess, onClose }) {
     invalid_or_expired_token: 'That took too long — please sign in again.',
     invalid_code:       'Incorrect code. Check your authenticator app and try again.',
     too_many_attempts:  'Too many attempts. Please wait a few minutes and try again.',
+    google_account_no_password: 'This account uses Google Sign-In. Continue with Google below instead.',
+    invalid_google_token: 'Google Sign-In failed. Please try again.',
+    google_email_not_verified: "Your Google account's email isn't verified. Please verify it with Google first.",
+    use_admin_signin:   'This email is an admin account — please sign in with your password instead.',
+    google_signin_not_configured: 'Google Sign-In isn\'t available right now. Please use email and password.',
   };
 
   const submit = async () => {
@@ -76,6 +84,67 @@ export default function AuthModal({ mode, onSwitchMode, onSuccess, onClose }) {
   };
 
   const handleKey = (e) => { if (e.key === 'Enter') (tempToken ? submitCode() : submit()); };
+
+  // Google hands the ID token to this callback directly (popup flow, no page
+  // navigation) — the modal stays open over whatever page it was opened on,
+  // so "return to wherever they were" is automatic once onSuccess closes it.
+  const handleGoogleCredential = useCallback(async (response) => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ idToken: response.credential }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(ERROR_MESSAGES[data.error] || 'Something went wrong. Try again.');
+      onSuccess(data.user);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onSuccess]);
+
+  // Renders Google's own branded button (never a custom one — required by
+  // Google's terms) into googleButtonRef. Skipped entirely during the 2FA
+  // code step, and if VITE_GOOGLE_CLIENT_ID isn't set, so local dev without
+  // it configured still shows a normal, working modal.
+  useEffect(() => {
+    if (tempToken || !GOOGLE_CLIENT_ID) return;
+    let cancelled = false;
+    let attempts = 0;
+    const tryRender = () => {
+      if (cancelled) return;
+      if (window.google?.accounts?.id && googleButtonRef.current) {
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleGoogleCredential,
+          ux_mode: 'popup',
+        });
+        googleButtonRef.current.innerHTML = ''; // clear before re-render (e.g. signin <-> signup)
+        window.google.accounts.id.renderButton(googleButtonRef.current, {
+          type: 'standard',
+          theme: 'outline',
+          size: 'large',
+          width: 344,
+          shape: 'rectangular',
+          logo_alignment: 'left',
+          text: isSignUp ? 'signup_with' : 'signin_with',
+        });
+      } else if (attempts < 50) {
+        // The GSI script loads async — poll briefly (~5s) in case this modal
+        // opens before it's ready, rather than never showing the button.
+        attempts++;
+        setTimeout(tryRender, 100);
+      }
+    };
+    tryRender();
+    return () => { cancelled = true; };
+  }, [isSignUp, tempToken, handleGoogleCredential]);
 
   return (
     <div onClick={onClose} style={{
@@ -153,6 +222,16 @@ export default function AuthModal({ mode, onSwitchMode, onSuccess, onClose }) {
           </div>
         ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          {GOOGLE_CLIENT_ID && (
+            <>
+              <div ref={googleButtonRef} style={{ display: "flex", justifyContent: "center", minHeight: "40px" }} />
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "2px 0" }}>
+                <div style={{ flex: 1, height: "1px", background: "#E8DCC8" }} />
+                <span style={{ fontSize: "12px", color: "#9A8472", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>or</span>
+                <div style={{ flex: 1, height: "1px", background: "#E8DCC8" }} />
+              </div>
+            </>
+          )}
           {isSignUp && (
             <Field label="Your name" value={name} onChange={setName} placeholder="First Last" onKeyDown={handleKey} />
           )}

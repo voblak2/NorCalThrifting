@@ -1,4 +1,5 @@
-// routes/auth.js — Sign-up, sign-in, sign-out, session check, and 2FA verification.
+// routes/auth.js — Sign-up, sign-in, sign-out, session check, 2FA verification,
+// and Google Sign-In.
 //
 // POST /api/auth/signup     — create account, returns user + sets cookie
 // POST /api/auth/signin     — authenticate; sets cookie directly, UNLESS the
@@ -6,17 +7,25 @@
 //                             case it returns a short-lived tempToken instead
 // POST /api/auth/verify-2fa — second step for a 2FA-enabled account: exchanges
 //                             a valid TOTP/backup code + tempToken for the cookie
+// POST /api/auth/google     — sign in / sign up via a verified Google ID token
+//                             (regular users only — see the admin guard below)
 // POST /api/auth/signout    — clears the auth cookie
 // GET  /api/auth/me         — returns current user from cookie (or 401)
 
 import { Router } from 'express';
+import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { verify as verifyTotp } from 'otplib';
-import { createUser, getUserByEmail, getUserById, updateBackupCodes } from '../db.js';
+import { OAuth2Client } from 'google-auth-library';
+import {
+  createUser, getUserByEmail, getUserById, updateBackupCodes,
+  getUserByGoogleId, linkGoogleId, createGoogleUser,
+} from '../db.js';
 import { signToken, requireAuth, signPendingTwoFactorToken, verifyPendingTwoFactorToken } from '../auth.js';
 
 const router = Router();
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // 10 attempts per IP per 15 minutes — a 6-digit TOTP code is only a 1-in-a-million
 // guess per try, but that's still brute-forceable without a limiter; this also
@@ -28,6 +37,43 @@ const twoFaLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Generous — a Google ID token is cryptographically verified, not guessable,
+// so this is defense against abuse/DoS on the outbound Google verification
+// call rather than a brute-force concern like the limiter above.
+const googleAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: 'too_many_attempts' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Finds the account for a verified Google identity, creating or linking one
+// as needed:
+//   1. Already linked (google_id matches) -> that account, no changes.
+//   2. An existing email/password account shares the email -> link google_id
+//      onto it (their password keeps working; Google becomes a second way in).
+//   3. Neither -> a brand-new, Google-only, role:'customer' account. Always
+//      'customer' — Google Sign-In deliberately never checks ADMIN_EMAILS or
+//      grants admin, regardless of which address signs in (see the explicit
+//      admin guard in the /google route below, which is the second half of
+//      that same guarantee for the linking case).
+async function findOrCreateGoogleUser({ googleId, email, name }) {
+  const byGoogleId = await getUserByGoogleId(googleId);
+  if (byGoogleId) return byGoogleId;
+
+  const byEmail = await getUserByEmail(email);
+  if (byEmail) {
+    await linkGoogleId(byEmail.id, googleId);
+    return { ...byEmail, google_id: googleId };
+  }
+
+  // No usable password exists for a Google-only account — this random value
+  // is never given to the user and can't be entered as a real password.
+  const placeholderHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
+  return createGoogleUser({ name, email, passwordHash: placeholderHash, googleId });
+}
 
 const BACKUP_CODE_SHAPE = /^[A-Z2-9]{4}-[A-Z2-9]{4}$/;
 
@@ -111,6 +157,11 @@ router.post('/signin', async (req, res) => {
   const user = await getUserByEmail(email);
   if (!user) return res.status(401).json({ error: 'invalid_credentials' });
 
+  // A Google-only account's password_hash is an unguessable random placeholder
+  // (see findOrCreateGoogleUser) — bcrypt.compare would just fail here anyway,
+  // but has_password lets us tell the user why instead of a generic wrong-password.
+  if (!user.has_password) return res.status(401).json({ error: 'google_account_no_password' });
+
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) return res.status(401).json({ error: 'invalid_credentials' });
 
@@ -169,6 +220,51 @@ router.post('/verify-2fa', twoFaLimiter, async (req, res) => {
   res.json({ user: publicUser(user), usedBackupCode });
 });
 
+// ─── Google Sign-In ───────────────────────────────────────────────────────────
+//
+// Regular users only. The admin account already has its own password (+
+// optional 2FA) flow, and Google Sign-In must never become a way around that
+// — so an email that already belongs to an admin account is explicitly
+// refused here, on top of findOrCreateGoogleUser() above never creating a
+// new account with role other than 'customer'.
+
+router.post('/google', googleAuthLimiter, async (req, res) => {
+  const { idToken } = req.body || {};
+  if (!idToken) return res.status(400).json({ error: 'missing_id_token' });
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    console.error('[auth] GOOGLE_CLIENT_ID is not configured — /auth/google cannot verify tokens');
+    return res.status(500).json({ error: 'google_signin_not_configured' });
+  }
+
+  let payload;
+  try {
+    const ticket = await googleClient.verifyIdToken({ idToken, audience: process.env.GOOGLE_CLIENT_ID });
+    payload = ticket.getPayload();
+  } catch (err) {
+    return res.status(401).json({ error: 'invalid_google_token' });
+  }
+
+  if (!payload?.sub || !payload?.email) return res.status(401).json({ error: 'invalid_google_token' });
+  if (!payload.email_verified) return res.status(401).json({ error: 'google_email_not_verified' });
+
+  // Refuse before touching the DB if this email already belongs to an admin —
+  // never link Google to that account or sign in through this endpoint.
+  const existing = await getUserByEmail(payload.email);
+  if (existing?.role === 'admin') {
+    return res.status(403).json({ error: 'use_admin_signin' });
+  }
+
+  const user = await findOrCreateGoogleUser({
+    googleId: payload.sub,
+    email: payload.email,
+    name: payload.name || payload.email.split('@')[0],
+  });
+
+  const token = signToken({ id: user.id, email: user.email, name: user.name, role: user.role });
+  res.cookie('nct_token', token, COOKIE_OPTS);
+  res.json({ user: publicUser(user) });
+});
+
 // ─── Sign out ─────────────────────────────────────────────────────────────────
 
 router.post('/signout', (req, res) => {
@@ -190,7 +286,7 @@ router.get('/me', requireAuth, async (req, res) => {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, email: u.email, role: u.role };
+  return { id: u.id, name: u.name, email: u.email, role: u.role, hasPassword: !!u.has_password };
 }
 
 export default router;
