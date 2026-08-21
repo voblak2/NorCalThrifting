@@ -254,6 +254,14 @@ export async function enrichThriftStoreDescription(id, { description, categories
 export async function searchSales(opts = {}) {
   const where = [
     `(expires_at IS NULL OR expires_at >= date('now'))`,
+    // Hide anything dated before today, but never touch listings with no
+    // sale_date at all (thrift stores, other permanent directory entries,
+    // and undated submissions) — those pass through unfiltered. Was
+    // accidentally dropped in commit d1991d3 while splitting this query
+    // into dated/permanent halves — restored here so both that legacy path
+    // and the offset-based pagination path (which spreads this same `where`
+    // array) inherit it again.
+    `(sale_date IS NULL OR sale_date >= date('now'))`,
     ...(opts.status === 'all' ? [] : [`status = 'active'`]),
   ];
   const args = [];
