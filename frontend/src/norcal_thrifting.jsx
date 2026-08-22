@@ -1,23 +1,20 @@
 import { lazy, Suspense, useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Search, MapPin, Calendar, X, Sparkles,
-  Heart, Filter, Plus, Loader2, AlertCircle, Shield, LogOut, User,
-  ChevronDown, LayoutDashboard, Map, Home, Zap, ShoppingBag, Mail, Menu,
+  Heart, Filter, Plus, Loader2, AlertCircle, Map, Home, Zap, ShoppingBag,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { API_URL, formatDate, formatTime, buildMapUrl, initials } from './shared.js';
+import { API_URL, formatDate, formatTime, buildMapUrl } from './shared.js';
 import { useSEO } from './useSEO.js';
 import SaleCard from './SaleCard.jsx';
 import { LOCATIONS } from './locations.js';
-import AuthModal from './AuthModal.jsx';
+import { useAuth } from './AuthContext.jsx';
 import SubmitModal from './SubmitModal.jsx';
 import { btnStyle, selectStyle } from './styles.js';
 
-// MapView (react-leaflet + leaflet) and AdminDashboard are lazy-loaded: they're
-// the two heaviest/most rarely-needed pieces of the bundle — most visits never
-// open the map, and only admins ever open the dashboard.
+// MapView (react-leaflet + leaflet) is lazy-loaded: it's the heaviest,
+// most rarely-needed piece of the bundle — most visits never open the map.
 const MapView = lazy(() => import('./MapView.jsx'));
-const AdminDashboard = lazy(() => import('./AdminDashboard.jsx'));
 
 function LoadingFallback({ minHeight = '200px' }) {
   return (
@@ -119,22 +116,7 @@ export default function NorCalThrifting() {
   const [loading, setLoading]       = useState(false);
   const [usingFallback, setUsingFallback] = useState(false);
   const [showSubmit, setShowSubmit] = useState(false);
-  const [showAdmin, setShowAdmin]   = useState(false);
   const [viewMode, setViewMode]     = useState('cards'); // 'cards' | 'map'
-  const [showRegionMenu, setShowRegionMenu] = useState(false);
-  const regionMenuRef = useRef(null);
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
-
-  useEffect(() => {
-    if (!showRegionMenu) return;
-    const handler = (e) => {
-      if (regionMenuRef.current && !regionMenuRef.current.contains(e.target)) {
-        setShowRegionMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showRegionMenu]);
 
   // Advanced filters
   const [dateFrom, setDateFrom]   = useState('');
@@ -177,29 +159,28 @@ export default function NorCalThrifting() {
       .catch(err => console.error('[cities] failed to load city filter options:', err));
   }, []);
 
-  // Auth state
-  const [user, setUser]         = useState(null);   // null = not logged in
-  const [showAuth, setShowAuth] = useState(false);
-  const [authMode, setAuthMode] = useState('signin'); // 'signin' | 'signup'
+  // Auth — session/sign-in state lives in AuthContext (shared with the nav
+  // header); this page just reacts to `user` for its own favorites logic.
+  const { user, setAuthMode, setShowAuth } = useAuth();
 
-  // ─── Restore session on mount ─────────────────────────────────────────────
+  // ─── Favorites: server-backed when signed in, guest/localStorage otherwise ─
+  // Reruns whenever `user` transitions (mount-time restore, sign-in, sign-out),
+  // replacing what used to be three separate call sites for the same fetch.
   useEffect(() => {
-    fetch(`${API_URL}/auth/me`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data?.user) return;
-        setUser(data.user);
-        return fetch(`${API_URL}/favorites`, { credentials: 'include' })
-          .then(r => r.ok ? r.json() : { ids: [] })
-          .then(fav => setFavorites(new Set(fav.ids || [])));
-      })
-      .catch(err => console.error('[auth] failed to restore session on mount:', err));
-  }, []);
+    if (!user) {
+      setFavorites(loadGuestFavorites());
+      return;
+    }
+    fetch(`${API_URL}/favorites`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : { ids: [] })
+      .then(fav => setFavorites(new Set(fav.ids || [])))
+      .catch(err => console.error('[favorites] failed to load favorites for signed-in user:', err));
+  }, [user]);
 
   // ─── Persist guest favorites ───────────────────────────────────────────────
   // Only while signed out — logged-in favorites live server-side (see
-  // toggleFave/handleAuthSuccess), so this must not overwrite the guest's
-  // saved list with the server list while a session is active.
+  // toggleFave), so this must not overwrite the guest's saved list with the
+  // server list while a session is active.
   useEffect(() => {
     if (user) return;
     try {
@@ -531,26 +512,6 @@ export default function NorCalThrifting() {
     });
   };
 
-  // ─── Sign out ─────────────────────────────────────────────────────────────
-  const signOut = async () => {
-    await fetch(`${API_URL}/auth/signout`, { method: 'POST', credentials: 'include' });
-    setUser(null);
-    // Restore whatever guest favorites were saved before sign-in, rather than
-    // clearing to empty — the persist effect skips writes while `user` is set,
-    // so localStorage still holds the pre-login guest list untouched.
-    setFavorites(loadGuestFavorites());
-  };
-
-  const handleAuthSuccess = (loggedInUser) => {
-    setUser(loggedInUser);
-    setShowAuth(false);
-    // Load server favorites
-    fetch(`${API_URL}/favorites`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : { ids: [] })
-      .then(fav => setFavorites(new Set(fav.ids || [])))
-      .catch(err => console.error('[favorites] failed to load favorites after sign-in:', err));
-  };
-
   const openAddSale = () => {
     if (!user) {
       setAuthMode('signin');
@@ -574,247 +535,9 @@ export default function NorCalThrifting() {
         opacity: 0.6, mixBlendMode: "multiply", zIndex: 0,
       }} />
 
-      {/* ─── Admin Banner ────────────────────────────────────────────────── */}
-      {user?.role === 'admin' && (
-        <div style={{
-          position: "sticky", top: 0, zIndex: 200,
-          background: "#A8542C", color: "#FFFCF6",
-          padding: "10px 24px",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-        }}>
-          <span style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", fontWeight: 700 }}>
-            <Shield size={16} />
-            Admin — {user.name}
-          </span>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button onClick={() => setShowAdmin(true)} style={{
-              display: "flex", alignItems: "center", gap: "6px",
-              background: "rgba(255,252,246,0.15)", border: "1px solid rgba(255,252,246,0.3)",
-              color: "#FFFCF6", borderRadius: "8px", padding: "5px 12px",
-              fontSize: "13px", fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
-            }}>
-              <LayoutDashboard size={14} /> Dashboard
-            </button>
-            <button onClick={signOut} style={{
-              display: "flex", alignItems: "center", gap: "6px",
-              background: "rgba(255,252,246,0.15)", border: "1px solid rgba(255,252,246,0.3)",
-              color: "#FFFCF6", borderRadius: "8px", padding: "5px 12px",
-              fontSize: "13px", fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
-            }}>
-              <LogOut size={14} /> Sign out
-            </button>
-          </div>
-        </div>
-      )}
-
-      <header style={{ position: "relative", zIndex: 1, padding: "32px 24px 16px", maxWidth: "1100px", margin: "0 auto" }}>
-        {/* ─── User bar (desktop — hidden below 720px, see .desktop-user-nav media query) ── */}
-        <div className="desktop-user-nav" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
-          <div ref={regionMenuRef} style={{ position: "relative" }}>
-            <button
-              onClick={() => setShowRegionMenu(v => !v)}
-              style={{
-                display: "flex", alignItems: "center", gap: "6px",
-                border: "1px solid #E8DCC8", borderRadius: "8px",
-                padding: "7px 14px", fontSize: "14px", fontWeight: 600,
-                color: "#A8542C", fontFamily: "inherit", cursor: "pointer",
-                background: showRegionMenu ? "#FBF5EC" : "none",
-              }}
-            >
-              <MapPin size={15} /> Browse by Region
-              <ChevronDown size={14} style={{ transform: showRegionMenu ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
-            </button>
-            {showRegionMenu && (
-              <div style={{
-                position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 50,
-                background: "#FFFCF6", border: "1px solid #E8DCC8", borderRadius: "12px",
-                boxShadow: "0 8px 24px rgba(61, 46, 38, 0.12)", padding: "6px", minWidth: "200px",
-              }}>
-                {Object.entries(LOCATIONS).map(([key, loc]) => (
-                  <Link
-                    key={key}
-                    to={loc.path}
-                    onClick={() => setShowRegionMenu(false)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: "8px",
-                      padding: "9px 12px", borderRadius: "8px",
-                      color: "#3D2E26", fontSize: "14px", fontWeight: 600, textDecoration: "none",
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#F5EDDF"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                  >
-                    <MapPin size={14} color="#A8542C" /> {loc.shortLabel}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-          <Link
-            to="/thrift-stores"
-            style={{
-              display: "flex", alignItems: "center", gap: "6px",
-              border: "1px solid #E8DCC8", borderRadius: "8px",
-              padding: "7px 14px", fontSize: "14px", fontWeight: 600,
-              color: "#3A8A6E", fontFamily: "inherit", textDecoration: "none",
-            }}
-          >
-            <ShoppingBag size={15} /> Thrift Store Directory
-          </Link>
-          <a
-            href="mailto:hello@norcalthrifting.com"
-            style={{
-              display: "flex", alignItems: "center", gap: "6px",
-              border: "1px solid #E8DCC8", borderRadius: "8px",
-              padding: "7px 14px", fontSize: "14px", fontWeight: 600,
-              color: "#6B5444", fontFamily: "inherit", textDecoration: "none",
-            }}
-          >
-            <Mail size={15} /> Contact Us
-          </a>
-          {user && user.role !== 'admin' ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <div style={{
-                width: "32px", height: "32px", borderRadius: "50%",
-                background: "#A8542C", color: "#FFFCF6",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "13px", fontWeight: 700,
-              }}>
-                {initials(user.name)}
-              </div>
-              <span style={{ fontSize: "14px", color: "#6B5444" }}>Hi, {user.name.split(' ')[0]}</span>
-              <button onClick={signOut} style={{
-                display: "flex", alignItems: "center", gap: "5px",
-                background: "none", border: "1px solid #E8DCC8", borderRadius: "8px",
-                padding: "5px 10px", fontSize: "13px", color: "#9A8472",
-                fontFamily: "inherit", cursor: "pointer",
-              }}>
-                <LogOut size={13} /> Sign out
-              </button>
-            </div>
-          ) : !user ? (
-            <button
-              onClick={() => { setAuthMode('signin'); setShowAuth(true); }}
-              style={{
-                display: "flex", alignItems: "center", gap: "6px",
-                background: "none", border: "1px solid #E8DCC8", borderRadius: "8px",
-                padding: "7px 14px", fontSize: "14px", fontWeight: 600,
-                color: "#A8542C", fontFamily: "inherit", cursor: "pointer",
-              }}
-            >
-              <User size={15} /> Sign in
-            </button>
-          ) : null}
-        </div>
-
-        {/* ─── User bar (mobile — hidden at 720px+, see .mobile-user-nav media query) ── */}
-        <div className="mobile-user-nav" style={{ marginBottom: "16px" }}>
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <button
-              onClick={() => setShowMobileMenu(v => !v)}
-              aria-label={showMobileMenu ? "Close menu" : "Open menu"}
-              style={{
-                display: "flex", alignItems: "center", gap: "6px",
-                border: "1px solid #E8DCC8", borderRadius: "8px",
-                padding: "9px 14px", fontSize: "14px", fontWeight: 600,
-                color: "#A8542C", fontFamily: "inherit", cursor: "pointer",
-                background: showMobileMenu ? "#FBF5EC" : "none",
-              }}
-            >
-              {showMobileMenu ? <X size={18} /> : <Menu size={18} />} Menu
-            </button>
-          </div>
-
-          {showMobileMenu && (
-            <div style={{
-              marginTop: "10px", background: "#FFFCF6", border: "1px solid #E8DCC8",
-              borderRadius: "14px", padding: "8px", boxShadow: "0 4px 16px rgba(61, 46, 38, 0.06)",
-            }}>
-              <p style={{ fontSize: "12px", fontWeight: 700, color: "#9A8472", textTransform: "uppercase",
-                letterSpacing: "0.04em", margin: "8px 12px 4px" }}>
-                Browse by Region
-              </p>
-              {Object.entries(LOCATIONS).map(([key, loc]) => (
-                <Link
-                  key={key}
-                  to={loc.path}
-                  onClick={() => setShowMobileMenu(false)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "8px",
-                    padding: "11px 12px", borderRadius: "8px",
-                    color: "#3D2E26", fontSize: "15px", fontWeight: 600, textDecoration: "none",
-                  }}
-                >
-                  <MapPin size={15} color="#A8542C" /> {loc.shortLabel}
-                </Link>
-              ))}
-
-              <div style={{ borderTop: "1px dashed #E8DCC8", margin: "8px 4px" }} />
-
-              <Link
-                to="/thrift-stores"
-                onClick={() => setShowMobileMenu(false)}
-                style={{
-                  display: "flex", alignItems: "center", gap: "8px",
-                  padding: "11px 12px", borderRadius: "8px",
-                  color: "#3A8A6E", fontSize: "15px", fontWeight: 600, textDecoration: "none",
-                }}
-              >
-                <ShoppingBag size={15} /> Thrift Store Directory
-              </Link>
-              <a
-                href="mailto:hello@norcalthrifting.com"
-                style={{
-                  display: "flex", alignItems: "center", gap: "8px",
-                  padding: "11px 12px", borderRadius: "8px",
-                  color: "#6B5444", fontSize: "15px", fontWeight: 600, textDecoration: "none",
-                }}
-              >
-                <Mail size={15} /> Contact Us
-              </a>
-
-              <div style={{ borderTop: "1px dashed #E8DCC8", margin: "8px 4px" }} />
-
-              {user && user.role !== 'admin' ? (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 12px" }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "15px", color: "#3D2E26", fontWeight: 600 }}>
-                    <div style={{
-                      width: "26px", height: "26px", borderRadius: "50%",
-                      background: "#A8542C", color: "#FFFCF6",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: "12px", fontWeight: 700, flexShrink: 0,
-                    }}>
-                      {initials(user.name)}
-                    </div>
-                    Hi, {user.name.split(' ')[0]}
-                  </span>
-                  <button onClick={() => { signOut(); setShowMobileMenu(false); }} style={{
-                    display: "flex", alignItems: "center", gap: "5px",
-                    background: "none", border: "1px solid #E8DCC8", borderRadius: "8px",
-                    padding: "6px 10px", fontSize: "13px", color: "#9A8472",
-                    fontFamily: "inherit", cursor: "pointer",
-                  }}>
-                    <LogOut size={13} /> Sign out
-                  </button>
-                </div>
-              ) : !user ? (
-                <button
-                  onClick={() => { setAuthMode('signin'); setShowAuth(true); setShowMobileMenu(false); }}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "8px",
-                    background: "none", border: "none", width: "100%", textAlign: "left",
-                    padding: "11px 12px", borderRadius: "8px",
-                    color: "#A8542C", fontSize: "15px", fontWeight: 600,
-                    fontFamily: "inherit", cursor: "pointer",
-                  }}
-                >
-                  <User size={15} /> Sign in
-                </button>
-              ) : null}
-            </div>
-          )}
-        </div>
-
+      {/* ─── Homepage hero (site nav/logo/sign-in live in the shared <Header>
+           rendered once at the App root — see Header.jsx) ─────────────────── */}
+      <div style={{ position: "relative", zIndex: 1, padding: "16px 24px", maxWidth: "1100px", margin: "0 auto" }}>
         <div style={{ textAlign: "center" }}>
           <div style={{
             display: "inline-flex", alignItems: "center", gap: "10px",
@@ -835,7 +558,7 @@ export default function NorCalThrifting() {
             Your NorCal guide to garage sales, estate sales, thrift stores, and curbside treasures.
           </p>
         </div>
-      </header>
+      </div>
 
       {/* Status banner when using fallback data */}
       {usingFallback && (
@@ -1162,19 +885,6 @@ export default function NorCalThrifting() {
       </footer>
 
       {showSubmit && <SubmitModal onClose={() => setShowSubmit(false)} onSuccess={fetchSales} />}
-      {showAdmin && (
-        <Suspense fallback={<LoadingFallback minHeight="100vh" />}>
-          <AdminDashboard user={user} onClose={() => setShowAdmin(false)} />
-        </Suspense>
-      )}
-      {showAuth && (
-        <AuthModal
-          mode={authMode}
-          onSwitchMode={setAuthMode}
-          onSuccess={handleAuthSuccess}
-          onClose={() => setShowAuth(false)}
-        />
-      )}
 
       <footer style={{
         textAlign: "center", padding: "24px 16px",
@@ -1187,11 +897,6 @@ export default function NorCalThrifting() {
       <style>{`
         @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
         .spin { animation: spin 1s linear infinite }
-        .mobile-user-nav { display: none; }
-        @media (max-width: 720px) {
-          .desktop-user-nav { display: none !important; }
-          .mobile-user-nav { display: block !important; }
-        }
       `}</style>
     </div>
   );

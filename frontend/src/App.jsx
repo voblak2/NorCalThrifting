@@ -1,6 +1,8 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
+import { AuthProvider } from './AuthContext.jsx';
+import Header from './Header.jsx';
 import NorCalThrifting from './norcal_thrifting.jsx';
 
 // The homepage is the most-visited route and stays in the main bundle. These
@@ -24,18 +26,21 @@ function RouteLoadingFallback() {
 
 export default function App() {
   return (
-    <Suspense fallback={<RouteLoadingFallback />}>
-      <Routes>
-        <Route path="/" element={<NorCalThrifting />} />
-        <Route path="/thrift-stores" element={<ThriftDirectory />} />
-        <Route path="/listing/:id" element={<ListingDetail />} />
-        <Route path="/sacramento" element={<LocationLanding region="sacramento" />} />
-        <Route path="/northern-california" element={<LocationLanding region="northern-california" />} />
-        <Route path="/central-valley" element={<LocationLanding region="central-valley" />} />
-        <Route path="/bay-area" element={<LocationLanding region="bay-area" />} />
-        <Route path="/redding" element={<LocationLanding region="redding" />} />
-        <Route path="*" element={<NorCalThrifting />} />
-      </Routes>
-    </Suspense>
+    <AuthProvider>
+      <Header />
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <Routes>
+          <Route path="/" element={<NorCalThrifting />} />
+          <Route path="/thrift-stores" element={<ThriftDirectory />} />
+          <Route path="/listing/:id" element={<ListingDetail />} />
+          <Route path="/sacramento" element={<LocationLanding region="sacramento" />} />
+          <Route path="/northern-california" element={<LocationLanding region="northern-california" />} />
+          <Route path="/central-valley" element={<LocationLanding region="central-valley" />} />
+          <Route path="/bay-area" element={<LocationLanding region="bay-area" />} />
+          <Route path="/redding" element={<LocationLanding region="redding" />} />
+          <Route path="*" element={<NorCalThrifting />} />
+        </Routes>
+      </Suspense>
+    </AuthProvider>
   );
 }
