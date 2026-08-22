@@ -547,16 +547,20 @@ export default function NorCalThrifting() {
           }}>
             <Sparkles size={14} /> WEEKEND TREASURE HUNTING
           </div>
+          {/* Visually hidden — keeps a real <h1> for SEO/screen readers now
+              that the brand name is conveyed by the logo image below. */}
           <h1 style={{
-            fontFamily: "'Fraunces', serif", fontSize: "clamp(48px, 7vw, 80px)",
-            fontWeight: 600, fontStyle: "italic", margin: "0 0 12px",
-            letterSpacing: "-0.02em", color: "#2C1F17", lineHeight: 1,
+            position: "absolute", width: "1px", height: "1px", padding: 0,
+            margin: "-1px", overflow: "hidden", clip: "rect(0,0,0,0)",
+            whiteSpace: "nowrap", border: 0,
           }}>
             NorCal Thrifting
           </h1>
-          <p style={{ fontSize: "17px", color: "#6B5444", maxWidth: "560px", margin: "0 auto", lineHeight: 1.5 }}>
-            Your NorCal guide to garage sales, estate sales, thrift stores, and curbside treasures.
-          </p>
+          <img
+            src="/logo-header.png"
+            alt="NorCal Thrifting — Garage Sales, Estate Sales & Thrift Stores in Northern California"
+            className="hero-logo"
+          />
         </div>
       </div>
 
@@ -897,6 +901,16 @@ export default function NorCalThrifting() {
       <style>{`
         @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
         .spin { animation: spin 1s linear infinite }
+        .hero-logo {
+          display: block; width: 100%; max-width: 600px;
+          margin: 12px auto 16px; height: auto;
+        }
+        @media (max-width: 768px) {
+          .hero-logo { max-width: 440px; }
+        }
+        @media (max-width: 480px) {
+          .hero-logo { max-width: 320px; }
+        }
       `}</style>
     </div>
   );

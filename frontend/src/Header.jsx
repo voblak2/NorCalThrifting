@@ -314,7 +314,7 @@ export default function Header() {
       <style>{`
         .site-logo { height: 44px; width: auto; display: block; }
         .mobile-site-nav { display: none; }
-        @media (max-width: 720px) {
+        @media (max-width: 820px) {
           .desktop-site-nav { display: none !important; }
           .mobile-site-nav { display: block !important; }
           .site-logo-mobile { height: 34px; }
