@@ -79,6 +79,15 @@ const SCHEMA = [
     status       TEXT    NOT NULL DEFAULT 'pending'
   )`,
   `CREATE INDEX IF NOT EXISTS idx_suggestions_status ON store_suggestions(status)`,
+  `CREATE TABLE IF NOT EXISTS contact_messages (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT    NOT NULL,
+    email        TEXT    NOT NULL,
+    subject      TEXT    NOT NULL DEFAULT 'General Question',
+    message      TEXT    NOT NULL,
+    submitted_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    ip_address   TEXT
+  )`,
 ];
 
 // Turso occasionally 502s transiently; without a retry here, that blip crashes
@@ -691,4 +700,17 @@ export async function updateStoreSuggestionStatus(id, status) {
 export async function countPendingStoreSuggestions() {
   const result = await client.execute(`SELECT COUNT(*) as n FROM store_suggestions WHERE status = 'pending'`);
   return Number(result.rows[0]?.n ?? 0);
+}
+
+// ---------- Contact form ----------
+// Every submission is persisted here regardless of whether email delivery
+// succeeds, so a message is never silently lost to an SMTP outage.
+
+export async function createContactMessage({ name, email, subject, message, ip_address }) {
+  const result = await client.execute({
+    sql: `INSERT INTO contact_messages (name, email, subject, message, ip_address)
+          VALUES (?, ?, ?, ?, ?)`,
+    args: [name, email, subject, message, ip_address ?? null],
+  });
+  return { id: Number(result.lastInsertRowid) };
 }

@@ -11,6 +11,7 @@ import NorCalThrifting from './norcal_thrifting.jsx';
 const ThriftDirectory = lazy(() => import('./ThriftDirectory.jsx'));
 const ListingDetail = lazy(() => import('./ListingDetail.jsx'));
 const LocationLanding = lazy(() => import('./LocationLanding.jsx'));
+const Contact = lazy(() => import('./Contact.jsx'));
 
 function RouteLoadingFallback() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/central-valley" element={<LocationLanding region="central-valley" />} />
           <Route path="/bay-area" element={<LocationLanding region="bay-area" />} />
           <Route path="/redding" element={<LocationLanding region="redding" />} />
+          <Route path="/contact" element={<Contact />} />
           <Route path="*" element={<NorCalThrifting />} />
         </Routes>
       </Suspense>

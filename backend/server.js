@@ -18,6 +18,7 @@
 //   GET  /api/favorites                   — current user's favorited sale IDs
 //   POST /api/favorites/:saleId           — toggle a favorite
 //   POST /api/suggestions                 — suggest a store for the directory (no auth)
+//   POST /api/contact                     — contact form submission (no auth)
 //   POST /api/admin/refresh               — trigger manual scraper run (admin)
 
 import 'dotenv/config';
@@ -27,7 +28,7 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import cron from 'node-cron';
-import { searchSales, getSaleById, upsertSale, countSales, getLastScraperRun, createStoreSuggestion } from './db.js';
+import { searchSales, getSaleById, upsertSale, countSales, getLastScraperRun, createStoreSuggestion, createContactMessage } from './db.js';
 import { geocode } from './geocode.js';
 import { requireAuth } from './auth.js';
 import authRoutes from './routes/auth.js';
@@ -36,6 +37,7 @@ import adminRoutes from './routes/admin.js';
 import uploadsRoutes from './routes/uploads.js';
 import { refreshAll } from './refresh.js';
 import { addDays } from './dateUtils.js';
+import { sendContactEmail } from './email.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT) || 3001;
@@ -64,8 +66,21 @@ const suggestLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// 3 contact form submissions per IP per hour — same rationale as suggestLimiter.
+const contactLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  message: { error: 'too_many_messages' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Keep in sync with the dropdown in frontend/src/SuggestStoreModal.jsx.
 const STORE_TYPES = ['Thrift Store', 'Vintage Shop', 'Consignment Shop', 'Antique Store', 'Estate Sale Company', 'Other'];
+
+// Keep in sync with the dropdown in frontend/src/Contact.jsx.
+const CONTACT_SUBJECTS = ['General Question', 'Report a Problem', 'Suggest a Store', 'Partnership Inquiry', 'Press & Media', 'Other'];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ---------- Middleware ----------
 
@@ -220,6 +235,39 @@ app.post('/api/suggestions', suggestLimiter, async (req, res) => {
     res.status(201).json({ ok: true, id });
   } catch (err) {
     console.error('[api] suggestion submit error:', err);
+    res.status(500).json({ error: 'submit_failed' });
+  }
+});
+
+/**
+ * Contact form — no auth required. Every message is persisted to
+ * contact_messages before an email is even attempted, so nothing is lost if
+ * SMTP is unconfigured or delivery fails (see email.js).
+ */
+app.post('/api/contact', contactLimiter, async (req, res) => {
+  const body = req.body || {};
+  const required = ['name', 'email', 'message'];
+  const missing = required.filter(k => !body[k] || !String(body[k]).trim());
+  if (missing.length) {
+    return res.status(400).json({ error: 'missing_fields', fields: missing });
+  }
+  const email = String(body.email).trim();
+  if (!EMAIL_RE.test(email)) {
+    return res.status(400).json({ error: 'invalid_email' });
+  }
+  const subject = CONTACT_SUBJECTS.includes(body.subject) ? body.subject : 'General Question';
+  const name = String(body.name).trim().slice(0, 100);
+  const message = String(body.message).trim().slice(0, 2000);
+
+  try {
+    await createContactMessage({ name, email, subject, message, ip_address: req.ip });
+    // sendContactEmail() never throws (it catches internally and returns
+    // {sent:false} on failure) — the message is already saved above either
+    // way, so email delivery is best-effort and never fails the submission.
+    await sendContactEmail({ name, email, subject, message });
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error('[api] contact submit error:', err);
     res.status(500).json({ error: 'submit_failed' });
   }
 });

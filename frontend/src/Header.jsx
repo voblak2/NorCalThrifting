@@ -134,8 +134,8 @@ export default function Header() {
             >
               <ShoppingBag size={15} /> Thrift Store Directory
             </Link>
-            <a
-              href="mailto:hello@norcalthrifting.com"
+            <Link
+              to="/contact"
               style={{
                 display: "flex", alignItems: "center", gap: "6px",
                 border: "1px solid #E8DCC8", borderRadius: "8px",
@@ -144,7 +144,7 @@ export default function Header() {
               }}
             >
               <Mail size={15} /> Contact Us
-            </a>
+            </Link>
             {user && user.role !== 'admin' ? (
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                 <div style={{
@@ -245,8 +245,9 @@ export default function Header() {
               >
                 <ShoppingBag size={15} /> Thrift Store Directory
               </Link>
-              <a
-                href="mailto:hello@norcalthrifting.com"
+              <Link
+                to="/contact"
+                onClick={() => setShowMobileMenu(false)}
                 style={{
                   display: "flex", alignItems: "center", gap: "8px",
                   padding: "11px 12px", borderRadius: "8px",
@@ -254,7 +255,7 @@ export default function Header() {
                 }}
               >
                 <Mail size={15} /> Contact Us
-              </a>
+              </Link>
 
               <div style={{ borderTop: "1px dashed #E8DCC8", margin: "8px 4px" }} />
 

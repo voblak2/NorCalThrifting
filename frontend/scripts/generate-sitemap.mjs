@@ -52,6 +52,7 @@ const today = new Date().toISOString().slice(0, 10);
 const entries = [
   urlEntry(`${SITE_URL}/`, { lastmod: today, changefreq: 'daily', priority: '1.0' }),
   urlEntry(`${SITE_URL}/thrift-stores`, { lastmod: today, changefreq: 'weekly', priority: '0.8' }),
+  urlEntry(`${SITE_URL}/contact`, { lastmod: today, changefreq: 'monthly', priority: '0.3' }),
   ...Object.values(LOCATIONS).map(loc => urlEntry(`${SITE_URL}${loc.path}`, {
     lastmod: today, changefreq: 'daily', priority: '0.9',
   })),
