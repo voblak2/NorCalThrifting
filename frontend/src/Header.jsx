@@ -30,42 +30,47 @@ export default function Header() {
 
   return (
     <>
-      {/* ─── Admin Banner ────────────────────────────────────────────────── */}
-      {user?.role === 'admin' && (
-        <div style={{
-          position: "sticky", top: 0, zIndex: 200,
-          background: "#A8542C", color: "#FFFCF6",
-          padding: "10px 24px",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-        }}>
-          <span style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", fontWeight: 700 }}>
-            <Shield size={16} />
-            Admin — {user.name}
-          </span>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button onClick={() => setShowAdmin(true)} style={{
-              display: "flex", alignItems: "center", gap: "6px",
-              background: "rgba(255,252,246,0.15)", border: "1px solid rgba(255,252,246,0.3)",
-              color: "#FFFCF6", borderRadius: "8px", padding: "5px 12px",
-              fontSize: "13px", fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
-            }}>
-              <LayoutDashboard size={14} /> Dashboard
-            </button>
-            <button onClick={signOut} style={{
-              display: "flex", alignItems: "center", gap: "6px",
-              background: "rgba(255,252,246,0.15)", border: "1px solid rgba(255,252,246,0.3)",
-              color: "#FFFCF6", borderRadius: "8px", padding: "5px 12px",
-              fontSize: "13px", fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
-            }}>
-              <LogOut size={14} /> Sign out
-            </button>
+      {/* ─── Sticky wrapper: admin banner (if any) + nav bar stack inside a
+           single position:sticky element, so they stick together as one unit
+           without needing separate top offsets or manual scroll-offset math
+           elsewhere in the app — the browser reserves this element's actual
+           rendered height in the page flow automatically, so page content
+           never needs manual top padding to avoid being covered by it. ── */}
+      <div style={{ position: "sticky", top: 0, zIndex: 1000, boxShadow: "0 2px 10px rgba(61, 46, 38, 0.08)" }}>
+        {/* ─── Admin Banner ──────────────────────────────────────────────── */}
+        {user?.role === 'admin' && (
+          <div style={{
+            background: "#A8542C", color: "#FFFCF6",
+            padding: "10px 24px",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+          }}>
+            <span style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", fontWeight: 700 }}>
+              <Shield size={16} />
+              Admin — {user.name}
+            </span>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={() => setShowAdmin(true)} style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                background: "rgba(255,252,246,0.15)", border: "1px solid rgba(255,252,246,0.3)",
+                color: "#FFFCF6", borderRadius: "8px", padding: "5px 12px",
+                fontSize: "13px", fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
+              }}>
+                <LayoutDashboard size={14} /> Dashboard
+              </button>
+              <button onClick={signOut} style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                background: "rgba(255,252,246,0.15)", border: "1px solid rgba(255,252,246,0.3)",
+                color: "#FFFCF6", borderRadius: "8px", padding: "5px 12px",
+                fontSize: "13px", fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
+              }}>
+                <LogOut size={14} /> Sign out
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       <header style={{
-        position: "relative", zIndex: 100, padding: "16px 24px",
+        position: "relative", background: "#FBF5EC", padding: "16px 24px",
         maxWidth: "1100px", margin: "0 auto",
       }}>
         {/* ─── Desktop row: logo left, nav right (hidden below 720px) ──────── */}
@@ -177,7 +182,7 @@ export default function Header() {
         </div>
 
         {/* ─── Mobile row: logo left, hamburger right (hidden at 720px+) ───── */}
-        <div className="mobile-site-nav">
+        <div className="mobile-site-nav" style={{ position: "relative" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <Link to="/" aria-label="NorCal Thrifting — home" style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
               <img
@@ -203,8 +208,10 @@ export default function Header() {
 
           {showMobileMenu && (
             <div style={{
-              marginTop: "10px", background: "#FFFCF6", border: "1px solid #E8DCC8",
-              borderRadius: "14px", padding: "8px", boxShadow: "0 4px 16px rgba(61, 46, 38, 0.06)",
+              position: "absolute", top: "calc(100% + 10px)", left: 0, right: 0, zIndex: 50,
+              background: "#FFFCF6", border: "1px solid #E8DCC8",
+              borderRadius: "14px", padding: "8px", boxShadow: "0 8px 24px rgba(61, 46, 38, 0.12)",
+              maxHeight: "calc(100vh - 100px)", overflowY: "auto",
             }}>
               <p style={{ fontSize: "12px", fontWeight: 700, color: "#9A8472", textTransform: "uppercase",
                 letterSpacing: "0.04em", margin: "8px 12px 4px" }}>
@@ -291,6 +298,7 @@ export default function Header() {
           )}
         </div>
       </header>
+      </div>
 
       {showAdmin && (
         <Suspense fallback={
