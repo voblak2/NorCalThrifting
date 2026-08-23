@@ -20,7 +20,7 @@
 //   POST /api/suggestions                 — suggest a store for the directory (no auth)
 //   POST /api/contact                     — contact form submission (no auth)
 //   GET  /api/admin/contact-messages      — list contact form submissions (admin)
-//   POST /api/admin/test-email            — send a test email via SMTP, raw result (admin)
+//   POST /api/admin/test-email            — send a test email via Resend, raw result (admin)
 //   POST /api/admin/refresh               — trigger manual scraper run (admin)
 
 import 'dotenv/config';
@@ -244,7 +244,7 @@ app.post('/api/suggestions', suggestLimiter, async (req, res) => {
 /**
  * Contact form — no auth required. Every message is persisted to
  * contact_messages before an email is even attempted, so nothing is lost if
- * SMTP is unconfigured or delivery fails (see email.js).
+ * Resend is unconfigured or delivery fails (see email.js).
  */
 app.post('/api/contact', contactLimiter, async (req, res) => {
   const body = req.body || {};

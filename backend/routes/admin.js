@@ -304,10 +304,10 @@ router.get('/contact-messages', requireAdmin, async (req, res) => {
   }
 });
 
-// Sends a real test email through the configured SMTP transport and returns
-// the raw nodemailer result (success info or the full error, unmodified) —
-// this is a debugging tool, so it deliberately does not sanitize/swallow
-// anything the way the contact form's own send path does.
+// Sends a real test email through Resend and returns the raw result (success
+// data or the full error, unmodified) — this is a debugging tool, so it
+// deliberately does not sanitize/swallow anything the way the contact form's
+// own send path does.
 router.post('/test-email', requireAdmin, async (req, res) => {
   try {
     const info = await sendTestEmail('voblak2@gmail.com');
@@ -319,9 +319,9 @@ router.post('/test-email', requireAdmin, async (req, res) => {
         name: err.name,
         message: err.message,
         code: err.code,
-        command: err.command,
-        response: err.response,
-        responseCode: err.responseCode,
+        statusCode: err.statusCode,
+        resendError: err.resendError,
+        cause: err.cause,
         stack: err.stack,
       },
     });
