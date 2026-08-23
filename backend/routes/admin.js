@@ -11,9 +11,11 @@ import {
   getStoreSuggestions, getStoreSuggestionById, updateStoreSuggestionStatus,
   countPendingStoreSuggestions, upsertSale,
   getUserById, setTotpSecret, enableTotp, disableTotp,
+  getContactMessages,
 } from '../db.js';
 import { refreshAll } from '../refresh.js';
 import { geocode, geocodeApprox } from '../geocode.js';
+import { sendTestEmail } from '../email.js';
 
 const router = Router();
 
@@ -288,6 +290,41 @@ router.post('/2fa/disable', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[api] 2fa/disable error:', err);
     res.status(500).json({ error: 'disable_failed' });
+  }
+});
+
+// List contact form submissions — read-only, newest first.
+router.get('/contact-messages', requireAdmin, async (req, res) => {
+  try {
+    const messages = await getContactMessages();
+    res.json({ count: messages.length, messages });
+  } catch (err) {
+    console.error('[api] admin/contact-messages error:', err);
+    res.status(500).json({ error: 'query_failed' });
+  }
+});
+
+// Sends a real test email through the configured SMTP transport and returns
+// the raw nodemailer result (success info or the full error, unmodified) —
+// this is a debugging tool, so it deliberately does not sanitize/swallow
+// anything the way the contact form's own send path does.
+router.post('/test-email', requireAdmin, async (req, res) => {
+  try {
+    const info = await sendTestEmail('voblak2@gmail.com');
+    res.json({ ok: true, info });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: {
+        name: err.name,
+        message: err.message,
+        code: err.code,
+        command: err.command,
+        response: err.response,
+        responseCode: err.responseCode,
+        stack: err.stack,
+      },
+    });
   }
 });
 

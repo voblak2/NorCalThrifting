@@ -19,6 +19,8 @@
 //   POST /api/favorites/:saleId           — toggle a favorite
 //   POST /api/suggestions                 — suggest a store for the directory (no auth)
 //   POST /api/contact                     — contact form submission (no auth)
+//   GET  /api/admin/contact-messages      — list contact form submissions (admin)
+//   POST /api/admin/test-email            — send a test email via SMTP, raw result (admin)
 //   POST /api/admin/refresh               — trigger manual scraper run (admin)
 
 import 'dotenv/config';

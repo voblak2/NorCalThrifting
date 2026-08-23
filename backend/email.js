@@ -45,3 +45,22 @@ export async function sendContactEmail({ name, email, subject, message }) {
     return { sent: false, error: err.message };
   }
 }
+
+// Deliberately does NOT catch — used only by the admin test-email endpoint,
+// which needs the real, unmodified nodemailer success/error object (SMTP
+// response code, server response text, etc.) to diagnose delivery problems.
+// sendContactEmail() above stays swallowing/best-effort on purpose; this one
+// is for debugging, not for the contact form's own request path.
+export async function sendTestEmail(to) {
+  if (!transporter) {
+    const err = new Error('SMTP is not configured — SMTP_HOST/SMTP_USER/SMTP_PASS are unset.');
+    err.code = 'SMTP_NOT_CONFIGURED';
+    throw err;
+  }
+  return transporter.sendMail({
+    from: `"NorCal Thrifting" <${process.env.SMTP_USER}>`,
+    to,
+    subject: 'NorCal Thrifting — test email',
+    text: `This is a test email sent at ${new Date().toISOString()} to verify the SMTP configuration.`,
+  });
+}

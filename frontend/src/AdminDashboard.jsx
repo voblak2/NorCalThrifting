@@ -1,7 +1,7 @@
 // AdminDashboard.jsx — admin-only listings/users/scraper dashboard, split
 // out of norcal_thrifting.jsx and lazy-loaded (only admins ever open it).
 import { useState, useEffect, useCallback } from 'react';
-import { Shield, X, List, Users, RefreshCw, Loader2, MessageSquarePlus, Check, Lock } from 'lucide-react';
+import { Shield, X, List, Users, RefreshCw, Loader2, MessageSquarePlus, Check, Lock, Mail } from 'lucide-react';
 import { API_URL } from './shared.js';
 import ApproveSuggestionModal from './ApproveSuggestionModal.jsx';
 import TwoFactorSettings from './TwoFactorSettings.jsx';
@@ -13,6 +13,7 @@ export default function AdminDashboard({ user, onClose }) {
   const [users, setUsers]           = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [suggestionsFilter, setSuggestionsFilter] = useState('pending');
+  const [contactMessages, setContactMessages] = useState([]);
   const [salesFilter, setSalesFilter] = useState('all');
   const [loading, setLoading]       = useState(false);
   const [fetchError, setFetchError] = useState(null);
@@ -59,6 +60,15 @@ export default function AdminDashboard({ user, onClose }) {
           return r.json();
         })
         .then(d => d && setSuggestions(d.suggestions || []))
+        .catch(err => setFetchError(err.message))
+        .finally(() => setLoading(false));
+    } else if (tab === 'contact') {
+      fetch(`${API_URL}/admin/contact-messages`, { credentials: 'include' })
+        .then(r => {
+          if (!r.ok) { setFetchError(`Error ${r.status}`); return null; }
+          return r.json();
+        })
+        .then(d => d && setContactMessages(d.messages || []))
         .catch(err => setFetchError(err.message))
         .finally(() => setLoading(false));
     } else {
@@ -141,6 +151,7 @@ export default function AdminDashboard({ user, onClose }) {
     { key: 'listings',    label: 'Listings', icon: <List size={14} /> },
     { key: 'users',       label: 'Users',    icon: <Users size={14} /> },
     { key: 'suggestions', label: stats?.pendingSuggestions ? `Store Suggestions (${stats.pendingSuggestions})` : 'Store Suggestions', icon: <MessageSquarePlus size={14} /> },
+    { key: 'contact',     label: 'Contact Messages', icon: <Mail size={14} /> },
     { key: 'scraper',     label: 'Scraper',  icon: <RefreshCw size={14} /> },
     { key: 'security',    label: 'Security', icon: <Lock size={14} /> },
   ];
@@ -376,6 +387,39 @@ export default function AdminDashboard({ user, onClose }) {
             onClose={() => setApprovingSuggestion(null)}
             onApproved={handleApproved}
           />
+        )}
+
+        {/* ── Contact Messages tab ── */}
+        {tab === 'contact' && !loading && (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #E8DCC8', color: '#9A8472', textAlign: 'left' }}>
+                  {['Name', 'Email', 'Subject', 'Message', 'Submitted'].map(h => (
+                    <th key={h} style={{ padding: '8px 12px', fontWeight: 700 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {contactMessages.map(m => (
+                  <tr key={m.id} style={{ borderBottom: '1px solid #F0E6D6' }}>
+                    <td style={{ padding: '10px 12px', fontWeight: 600, color: '#2C1F17', whiteSpace: 'nowrap' }}>{m.name}</td>
+                    <td style={{ padding: '10px 12px', color: '#6B5444', whiteSpace: 'nowrap' }}>{m.email}</td>
+                    <td style={{ padding: '10px 12px', color: '#6B5444', whiteSpace: 'nowrap' }}>{m.subject}</td>
+                    <td style={{ padding: '10px 12px', color: '#6B5444', maxWidth: '320px' }}>
+                      {m.message.length > 100 ? `${m.message.slice(0, 100)}…` : m.message}
+                    </td>
+                    <td style={{ padding: '10px 12px', color: '#9A8472', whiteSpace: 'nowrap' }}>
+                      {m.submitted_at ? new Date(m.submitted_at.replace(' ', 'T')).toLocaleString() : '—'}
+                    </td>
+                  </tr>
+                ))}
+                {contactMessages.length === 0 && (
+                  <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#9A8472' }}>No contact messages yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         )}
 
         {/* ── Scraper tab ── */}

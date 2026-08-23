@@ -714,3 +714,10 @@ export async function createContactMessage({ name, email, subject, message, ip_a
   });
   return { id: Number(result.lastInsertRowid) };
 }
+
+export async function getContactMessages() {
+  const result = await client.execute(
+    `SELECT * FROM contact_messages ORDER BY submitted_at DESC LIMIT 500`
+  );
+  return result.rows;
+}
