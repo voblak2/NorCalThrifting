@@ -272,7 +272,15 @@ export default function ListingDetail() {
               paddingTop: "16px", borderTop: "1px dashed #E8DCC8" }}>
               {sale.source && (
                 <span style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#9A8472" }}>
-                  <Tag size={12} /> via {sale.source}
+                  <Tag size={12} />
+                  {sale.source_url ? (
+                    <a href={sale.source_url} target="_blank" rel="noopener noreferrer"
+                      style={{ display: "inline-flex", alignItems: "center", gap: "3px", color: "#9A8472", textDecoration: "underline" }}>
+                      via {sale.source} <ExternalLink size={10} />
+                    </a>
+                  ) : (
+                    <>via {sale.source}</>
+                  )}
                 </span>
               )}
               <a href={buildMapUrl(sale)} target="_blank" rel="noopener noreferrer"
