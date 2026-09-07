@@ -24,6 +24,10 @@ function upsertLink(rel, href) {
   el.setAttribute('href', href);
 }
 
+function removeLink(rel) {
+  document.head.querySelector(`link[rel="${rel}"]`)?.remove();
+}
+
 /**
  * Sets the document title, meta description, Open Graph / Twitter tags,
  * canonical URL, and an optional JSON-LD block for the current route.
@@ -37,7 +41,7 @@ const DEFAULT_TITLE = `${SITE_NAME} — Garage Sales, Estate Sales & Thrift Stor
  * does not append a site-name suffix, so callers compose it themselves,
  * e.g. `${sale.title} — ${city}, ${date} | ${SITE_NAME}`).
  */
-export function useSEO({ title, description, path = '/', image, robots, jsonLd }) {
+export function useSEO({ title, description, path = '/', image, robots, jsonLd, canonical = true }) {
   useEffect(() => {
     const fullTitle = title || DEFAULT_TITLE;
     const desc = description || 'Your NorCal guide to garage sales, estate sales, thrift stores, and curbside treasures.';
@@ -56,7 +60,11 @@ export function useSEO({ title, description, path = '/', image, robots, jsonLd }
     upsertMeta('name', 'twitter:title', fullTitle);
     upsertMeta('name', 'twitter:description', desc);
     if (image) upsertMeta('name', 'twitter:image', image);
-    upsertLink('canonical', url);
+    if (canonical) {
+      upsertLink('canonical', url);
+    } else {
+      removeLink('canonical');
+    }
 
     let script = null;
     if (jsonLd) {
@@ -75,7 +83,7 @@ export function useSEO({ title, description, path = '/', image, robots, jsonLd }
       if (existing) existing.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, description, path, image, robots, JSON.stringify(jsonLd)]);
+  }, [title, description, path, image, robots, JSON.stringify(jsonLd), canonical]);
 }
 
 export { SITE_NAME, SITE_URL };

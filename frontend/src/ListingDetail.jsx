@@ -121,6 +121,7 @@ export default function ListingDetail() {
     image,
     robots: notFound ? 'noindex, follow' : 'index, follow',
     jsonLd: sale ? buildJsonLd(sale, url, image) : undefined,
+    canonical: !notFound,
   });
 
   return (
