@@ -30,7 +30,7 @@
     "qrcode": "^1.5.4",
     "resend": "^6.22.0",
     "rss-parser": "^3.13.0",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.4"
   },
   "engines": {
     "node": ">=20"
