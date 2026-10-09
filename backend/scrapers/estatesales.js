@@ -102,15 +102,25 @@ async function getSaleUrls(state, slug) {
 
   const $ = cheerio.load(html);
   const urls = new Set();
-  const pat  = new RegExp(`^/${state}/[\\w-]+/\\d{5}/\\d+$`);
+  const pat  = new RegExp(`^/${state}/[\\w-]+/(\\d{5})/\\d+$`);
   $('a[href]').each((_, el) => {
     const href = $(el).attr('href') || '';
-    if (pat.test(href)) urls.add(href);
+    const m = href.match(pat);
+    if (m && isNorCalZip(m[1])) urls.add(href);
   });
 
   const result = [...urls].slice(0, MAX_PER_CITY);
   console.log(`[estatesales] ${slug}: ${result.length} sale links`);
   return result;
+}
+
+// City pages also link "nearby" sales — the Bakersfield page is mostly LA /
+// Ventura / Santa Maria. Keep only Central Valley + NorCal ZIP prefixes:
+// 932–933 (Visalia/Bakersfield) and 936–961; drops SoCal (900–931) and the
+// Central Coast / high desert (934–935).
+function isNorCalZip(zip) {
+  const p = parseInt(zip.slice(0, 3), 10);
+  return p === 932 || p === 933 || (p >= 936 && p <= 961);
 }
 
 // ---------- Step 2: fetch a detail page and extract JSON-LD ----------

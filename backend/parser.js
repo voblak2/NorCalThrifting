@@ -85,9 +85,14 @@ function extractDate(text, postedDate) {
     const month = MONTH_NAMES[m[1].toLowerCase()];
     const day   = parseInt(m[2]);
     let year    = m[3] ? parseInt(m[3]) : postedDate.getFullYear();
-    // If the date already passed this year, assume next year
+    // Only roll to next year if the date is well in the past (e.g. "Jan 3"
+    // posted in December). Craigslist re-parses every still-live post on each
+    // nightly scrape using today as postedDate, so a recently-passed "Sept 25"
+    // must stay in the past (and get filtered/purged) — not jump to next year.
     const candidate = new Date(year, month - 1, day);
-    if (candidate < startOfDay(postedDate) && !m[3]) year += 1;
+    const rolloverCutoff = startOfDay(postedDate);
+    rolloverCutoff.setDate(rolloverCutoff.getDate() - 60);
+    if (candidate < rolloverCutoff && !m[3]) year += 1;
     if (isValidDate(year, month, day)) return iso(year, month, day);
   }
 
