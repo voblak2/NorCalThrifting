@@ -283,27 +283,31 @@ app.post('/api/contact', contactLimiter, async (req, res) => {
 
 // ---------- Startup ----------
 
-const schedule = process.env.CRON_SCHEDULE || '0 6 * * *';
+// Pacific time, so the run stays outside the overnight window the backend is
+// allowed to sleep (~11pm-5am PT) across DST changes.
+const schedule = process.env.CRON_SCHEDULE || '0 7 * * *';
+const CRON_TIMEZONE = 'America/Los_Angeles';
 if (cron.validate(schedule)) {
   cron.schedule(schedule, async () => {
     console.log(`[cron] scheduled refresh starting at ${new Date().toISOString()}`);
     try { await refreshAll(); } catch (err) { console.error('[cron] refresh failed:', err); }
-  });
-  console.log(`[cron] auto-refresh scheduled: "${schedule}"`);
+  }, { timezone: CRON_TIMEZONE });
+  console.log(`[cron] auto-refresh scheduled: "${schedule}" (${CRON_TIMEZONE})`);
 } else {
   console.warn(`[cron] invalid CRON_SCHEDULE "${schedule}" — auto-refresh disabled`);
 }
 
 // Render's free tier spins down on idle, which can silently swallow the single
 // daily cron tick above with no catch-up — so also self-heal on boot if the
-// last successful scrape is stale (covers both "process was asleep at 6am"
-// and "this is a fresh deploy that's never run it").
+// last successful scrape is stale (covers both "process was asleep at 7am"
+// and "this is a fresh deploy that's never run it"). 26h rather than 24h so a
+// normal boot shortly before the daily cron doesn't trigger a duplicate run.
 (async () => {
   try {
     const lastRun = await getLastScraperRun();
     const lastRunMs = lastRun ? new Date(lastRun.replace(' ', 'T') + 'Z').getTime() : null;
     const staleMs = lastRunMs ? Date.now() - lastRunMs : Infinity;
-    if (staleMs > 20 * 3600_000) {
+    if (staleMs > 26 * 3600_000) {
       console.log(`[cron] last successful scrape was ${lastRun ?? 'never'} — running catch-up refresh on boot`);
       refreshAll().catch(err => console.error('[cron] catch-up refresh failed:', err));
     }

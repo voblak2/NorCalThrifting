@@ -20,7 +20,7 @@ Live at **[norcalthrifting.com](https://norcalthrifting.com)**.
 - Accepts community-submitted sales via a rate-limited REST endpoint (5/hour/IP, requires sign-in)
 - Accepts photo uploads on submissions — resized/re-encoded with sharp and stored on **Cloudflare R2** (5 photos/8MB max)
 - Contact form backed by a DB-logged message table plus **Resend** email delivery (every submission is saved before an email is even attempted, so nothing is lost if delivery fails)
-- Auto-refreshes scrapers on a configurable cron schedule (default: 6 AM daily), plus a boot-time self-heal that runs a fresh scrape immediately if the last successful run is more than 20 hours stale — covers Render free-tier restarts landing on a bad minute for the cron
+- Auto-refreshes scrapers on a configurable cron schedule (default: 7 AM Pacific daily), plus a boot-time self-heal that runs a fresh scrape immediately if the last successful run is more than 26 hours stale — covers Render free-tier restarts landing on a bad minute for the cron
 - Auto-expires old listings so results stay current
 
 **Frontend**
@@ -224,7 +224,7 @@ Copy `backend/.env.example` to `backend/.env` and adjust as needed:
 | `JWT_EXPIRES_IN` | `30d` | JWT lifetime |
 | `ADMIN_EMAILS` | — | Comma-separated emails auto-granted the admin role on sign-up |
 | `GOOGLE_CLIENT_ID` | — | OAuth client ID from Google Cloud Console — enables Google Sign-In. Same value as the frontend's `VITE_GOOGLE_CLIENT_ID` |
-| `CRON_SCHEDULE` | `0 6 * * *` | Cron expression for automatic scraper refresh |
+| `CRON_SCHEDULE` | `0 7 * * *` | Cron expression for automatic scraper refresh, in America/Los_Angeles time |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET_NAME` / `R2_PUBLIC_URL` | — | Cloudflare R2 credentials for photo uploads (S3-compatible) — required for `POST /api/uploads` to work |
 | `RESEND_API_KEY` | — | Resend API key for contact-form email delivery. Without it, submissions still save to the database, just aren't emailed |
 | `CONTACT_TO_EMAIL` | `hello@norcalthrifting.com` | Destination address for contact form submissions |
