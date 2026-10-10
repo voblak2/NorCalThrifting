@@ -174,7 +174,9 @@ export async function upsertSale(sale) {
         location_approx=excluded.location_approx,
         expires_at=excluded.expires_at,
         sale_type=excluded.sale_type,
-        status=excluded.status`,
+        -- Preserve admin moderation: a nightly re-scrape must not flip a
+        -- rejected/pending listing back to active.
+        status=CASE WHEN sales.status IN ('rejected', 'pending') THEN sales.status ELSE excluded.status END`,
     args: [
       sale.source,
       sale.source_url       ?? null,

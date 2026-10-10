@@ -32,7 +32,7 @@ import rateLimit from 'express-rate-limit';
 import cron from 'node-cron';
 import { searchSales, getSaleById, upsertSale, countSales, getLastScraperRun, createStoreSuggestion, createContactMessage } from './db.js';
 import { geocode } from './geocode.js';
-import { requireAuth } from './auth.js';
+import { requireAuth, optionalAuth } from './auth.js';
 import authRoutes from './routes/auth.js';
 import favoritesRoutes from './routes/favorites.js';
 import adminRoutes from './routes/admin.js';
@@ -141,10 +141,17 @@ app.get('/api/sales', async (req, res) => {
   }
 });
 
-app.get('/api/sales/:id', async (req, res) => {
+app.get('/api/sales/:id', optionalAuth, async (req, res) => {
   try {
     const sale = await getSaleById(parseInt(req.params.id));
     if (!sale) return res.status(404).json({ error: 'not_found' });
+    // Rejected/pending listings are hidden from the public, same as the feed;
+    // admins can still open them.
+    if (sale.status !== 'active') {
+      if (req.user?.role !== 'admin') return res.status(404).json({ error: 'not_found' });
+      res.set('Cache-Control', 'private, no-store');
+      return res.json({ sale });
+    }
     res.set('Cache-Control', 'public, max-age=300');
     res.json({ sale });
   } catch (err) {
