@@ -20,3 +20,7 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Database backups (kept outside the repo; safeguard in case one lands here)
+backups/
+*.sql
