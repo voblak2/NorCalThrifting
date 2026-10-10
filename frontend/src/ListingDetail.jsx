@@ -6,9 +6,18 @@ import { useSEO, SITE_URL, SITE_NAME } from './useSEO.js';
 
 const infoRowStyle = { display: "flex", alignItems: "flex-start", gap: "10px", color: "#6B5444", fontSize: "15px" };
 
+function isValidDate(date) {
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const [y, m, d] = date.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+// The free-text parser occasionally produces impossible times (e.g. "25:00"
+// from "Sept 25-26"), so drop the time rather than emit an invalid datetime.
 function toISODateTime(date, time) {
   if (!date) return undefined;
-  return time ? `${date}T${time}:00` : date;
+  return time && /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? `${date}T${time}:00` : date;
 }
 
 function buildJsonLd(sale, url, image) {
@@ -35,6 +44,10 @@ function buildJsonLd(sale, url, image) {
       ...(image ? { image: [image] } : {}),
     };
   }
+
+  // An Event without a startDate is invalid structured data — undated
+  // Craigslist posts get no JSON-LD at all.
+  if (!isValidDate(sale.sale_date)) return undefined;
 
   return {
     '@context': 'https://schema.org',
