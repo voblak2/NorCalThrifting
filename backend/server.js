@@ -20,6 +20,7 @@
 //   POST /api/suggestions                 — suggest a store for the directory (no auth)
 //   POST /api/contact                     — contact form submission (no auth)
 //   GET  /api/admin/contact-messages      — list contact form submissions (admin)
+//   GET  /api/admin/analytics             — internal metrics for the Analytics tab (admin)
 //   POST /api/admin/test-email            — send a test email via Resend, raw result (admin)
 //   POST /api/admin/refresh               — trigger manual scraper run (admin)
 

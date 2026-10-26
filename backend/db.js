@@ -88,6 +88,21 @@ const SCHEMA = [
     submitted_at TEXT    NOT NULL DEFAULT (datetime('now')),
     ip_address   TEXT
   )`,
+  // One row per scraper per refreshAll() run — the admin Analytics tab's
+  // scraper-health panel reads this. `ok` means the scraper ran to completion
+  // without throwing; per-item failures it caught internally land in `errors`.
+  `CREATE TABLE IF NOT EXISTS scraper_runs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    scraper       TEXT    NOT NULL,
+    started_at    TEXT    NOT NULL,
+    finished_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    ok            INTEGER NOT NULL,
+    processed     INTEGER NOT NULL DEFAULT 0,
+    added         INTEGER NOT NULL DEFAULT 0,
+    errors        INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_scraper_runs_scraper ON scraper_runs(scraper, finished_at)`,
 ];
 
 // Turso occasionally 502s transiently; without a retry here, that blip crashes
@@ -722,4 +737,102 @@ export async function getContactMessages() {
     `SELECT * FROM contact_messages ORDER BY submitted_at DESC LIMIT 500`
   );
   return result.rows;
+}
+
+// ---------- Scraper runs / analytics ----------
+
+export async function countSalesBySource(source) {
+  const result = await client.execute({
+    sql: `SELECT COUNT(*) as n FROM sales WHERE source = ?`,
+    args: [source],
+  });
+  return Number(result.rows[0]?.n ?? 0);
+}
+
+export async function recordScraperRun({ scraper, started_at, ok, processed = 0, added = 0, errors = 0, error_message = null }) {
+  await client.execute({
+    sql: `INSERT INTO scraper_runs (scraper, started_at, ok, processed, added, errors, error_message)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [scraper, started_at, ok ? 1 : 0, processed, added, errors, error_message],
+  });
+}
+
+// Everything the admin Analytics tab shows, in one batched round-trip —
+// Turso is a network hop away, so a dozen sequential execute() calls would
+// add up. Light shaping (bucketing, zero-filling) happens in routes/admin.js.
+export async function getAnalyticsData() {
+  const [
+    bySource, byType, perDay, byState, topCities,
+    userTotals, recentUsers,
+    favTotal, topFavorites,
+    recentContact,
+    suggestionCounts, recentSuggestions,
+    lastRuns, lastOkRuns, recentFailures, lastListingBySource,
+    tableCounts,
+  ] = await client.batch([
+    `SELECT source, COUNT(*) as n FROM sales GROUP BY source ORDER BY n DESC`,
+    `SELECT COALESCE(sale_type, 'garage_sale') as sale_type, COUNT(*) as n FROM sales GROUP BY 1 ORDER BY n DESC`,
+    `SELECT date(created_at) as day, COUNT(*) as n FROM sales
+       WHERE created_at >= date('now', '-29 days') GROUP BY day`,
+    `SELECT state, COUNT(*) as n FROM sales GROUP BY state ORDER BY n DESC`,
+    // Some scraped rows differ only by casing ("CHICO" vs "Chico") — group
+    // case-insensitively; MAX() picks the mixed-case spelling as the label.
+    `SELECT MAX(TRIM(city)) as city, state, COUNT(*) as n FROM sales
+       GROUP BY LOWER(TRIM(city)), state ORDER BY n DESC LIMIT 10`,
+    `SELECT COUNT(*) as total,
+            SUM(CASE WHEN google_id IS NOT NULL AND has_password = 0 THEN 1 ELSE 0 END) as google_only,
+            SUM(CASE WHEN google_id IS NOT NULL AND has_password = 1 THEN 1 ELSE 0 END) as linked,
+            SUM(CASE WHEN google_id IS NULL THEN 1 ELSE 0 END) as email_only
+       FROM users`,
+    `SELECT created_at FROM users WHERE created_at >= datetime('now', '-56 days')`,
+    `SELECT COUNT(*) as n FROM favorites`,
+    `SELECT s.id, s.title, s.city, s.sale_type, s.status, COUNT(*) as n
+       FROM favorites f JOIN sales s ON s.id = f.sale_id
+       GROUP BY f.sale_id ORDER BY n DESC, s.id LIMIT 10`,
+    `SELECT submitted_at FROM contact_messages WHERE submitted_at >= datetime('now', '-56 days')`,
+    `SELECT status, COUNT(*) as n FROM store_suggestions GROUP BY status`,
+    `SELECT id, name, city, state, store_type, status, submitted_at FROM store_suggestions
+       ORDER BY submitted_at DESC LIMIT 8`,
+    `SELECT r.* FROM scraper_runs r
+       JOIN (SELECT scraper, MAX(id) as id FROM scraper_runs GROUP BY scraper) m ON m.id = r.id`,
+    `SELECT scraper, MAX(finished_at) as finished_at FROM scraper_runs WHERE ok = 1 GROUP BY scraper`,
+    `SELECT * FROM scraper_runs WHERE ok = 0 OR errors > 0 ORDER BY id DESC LIMIT 10`,
+    // Fallback "last activity" for scrapers with no scraper_runs history yet
+    // (everything before that table existed).
+    `SELECT source, MAX(created_at) as last_at FROM sales
+       WHERE source IN ('craigslist', 'estatesales', 'osm_directory') GROUP BY source`,
+    `SELECT 'sales' as tbl, COUNT(*) as n FROM sales
+       UNION ALL SELECT 'users', COUNT(*) FROM users
+       UNION ALL SELECT 'favorites', COUNT(*) FROM favorites
+       UNION ALL SELECT 'store_suggestions', COUNT(*) FROM store_suggestions
+       UNION ALL SELECT 'contact_messages', COUNT(*) FROM contact_messages
+       UNION ALL SELECT 'scraper_runs', COUNT(*) FROM scraper_runs`,
+  ], 'read');
+
+  // libSQL rows are array-like objects with extra non-enumerable accessors —
+  // spread into plain objects so res.json() serializes them predictably, and
+  // coerce COUNT/SUM results (which can come back as bigint) to numbers.
+  const plain = rs => rs.rows.map(r => Object.fromEntries(
+    rs.columns.map((c, i) => [c, typeof r[i] === 'bigint' ? Number(r[i]) : r[i]])
+  ));
+
+  return {
+    bySource:            plain(bySource),
+    byType:              plain(byType),
+    perDay:              plain(perDay),
+    byState:             plain(byState),
+    topCities:           plain(topCities),
+    userTotals:          plain(userTotals)[0],
+    recentUsers:         plain(recentUsers),
+    favoritesTotal:      plain(favTotal)[0].n,
+    topFavorites:        plain(topFavorites),
+    recentContact:       plain(recentContact),
+    suggestionCounts:    plain(suggestionCounts),
+    recentSuggestions:   plain(recentSuggestions),
+    lastRuns:            plain(lastRuns),
+    lastOkRuns:          plain(lastOkRuns),
+    recentFailures:      plain(recentFailures),
+    lastListingBySource: plain(lastListingBySource),
+    tableCounts:         plain(tableCounts),
+  };
 }

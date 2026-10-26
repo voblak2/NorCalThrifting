@@ -11,7 +11,7 @@ import {
   getStoreSuggestions, getStoreSuggestionById, updateStoreSuggestionStatus,
   countPendingStoreSuggestions, upsertSale,
   getUserById, setTotpSecret, enableTotp, disableTotp,
-  getContactMessages,
+  getContactMessages, getAnalyticsData,
 } from '../db.js';
 import { refreshAll } from '../refresh.js';
 import { geocode, geocodeApprox } from '../geocode.js';
@@ -61,6 +61,91 @@ router.get('/stats', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[api] admin/stats error:', err);
     res.status(500).json({ error: 'stats_failed' });
+  }
+});
+
+const DAY_MS = 24 * 3600_000;
+// SQLite datetime('now') strings are UTC with no zone marker.
+const parseDbTime = s => new Date(s.replace(' ', 'T') + 'Z').getTime();
+
+// Buckets timestamps into `weeks` rolling 7-day windows ending now, oldest
+// first, each labeled by its start date (YYYY-MM-DD, UTC).
+function weeklyBuckets(timestamps, weeks = 8) {
+  const now = Date.now();
+  const buckets = Array.from({ length: weeks }, (_, i) => ({
+    week: new Date(now - (weeks - i) * 7 * DAY_MS).toISOString().slice(0, 10),
+    n: 0,
+  }));
+  for (const t of timestamps) {
+    if (!t) continue;
+    const ago = Math.floor((now - parseDbTime(t)) / (7 * DAY_MS));
+    if (ago >= 0 && ago < weeks) buckets[weeks - 1 - ago].n++;
+  }
+  return buckets;
+}
+
+// Internal metrics for the admin Analytics tab — everything comes from our
+// own DB; nothing here calls an external API.
+router.get('/analytics', requireAdmin, async (req, res) => {
+  try {
+    const d = await getAnalyticsData();
+
+    const perDayMap = new Map(d.perDay.map(r => [r.day, r.n]));
+    const listingsPerDay = Array.from({ length: 30 }, (_, i) => {
+      const day = new Date(Date.now() - (29 - i) * DAY_MS).toISOString().slice(0, 10);
+      return { day, n: perDayMap.get(day) ?? 0 };
+    });
+
+    const lastOk = new Map(d.lastOkRuns.map(r => [r.scraper, r.finished_at]));
+    const lastRun = new Map(d.lastRuns.map(r => [r.scraper, r]));
+    const lastListing = new Map(d.lastListingBySource.map(r => [r.source, r.last_at]));
+    const scrapers = [
+      { key: 'craigslist',  label: 'Craigslist',  source: 'craigslist',    cadence: 'daily' },
+      { key: 'estatesales', label: 'EstateSales', source: 'estatesales',   cadence: 'daily' },
+      { key: 'osm',         label: 'OSM',         source: 'osm_directory', cadence: 'weekly' },
+    ].map(s => ({
+      ...s,
+      lastSuccess: lastOk.get(s.key) ?? null,
+      lastRun:     lastRun.get(s.key) ?? null,
+      // Newest listing from this source — a usable stand-in for "last
+      // success" until the scraper has a scraper_runs history.
+      lastListingAt: lastListing.get(s.source) ?? null,
+    }));
+
+    const suggestionCounts = { pending: 0, approved: 0, rejected: 0 };
+    for (const r of d.suggestionCounts) suggestionCounts[r.status] = r.n;
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      listings: {
+        total:  d.bySource.reduce((sum, r) => sum + r.n, 0),
+        bySource: d.bySource,
+        byType:   d.byType,
+        perDay:   listingsPerDay,
+      },
+      geography: { byState: d.byState, topCities: d.topCities },
+      users: {
+        total:      d.userTotals.total ?? 0,
+        googleOnly: d.userTotals.google_only ?? 0,
+        linked:     d.userTotals.linked ?? 0,
+        emailOnly:  d.userTotals.email_only ?? 0,
+        signupsPerWeek: weeklyBuckets(d.recentUsers.map(r => r.created_at)),
+      },
+      engagement: {
+        favoritesTotal: d.favoritesTotal,
+        topFavorites:   d.topFavorites,
+        contactPerWeek: weeklyBuckets(d.recentContact.map(r => r.submitted_at)),
+      },
+      suggestions: { counts: suggestionCounts, recent: d.recentSuggestions },
+      scrapers: { list: scrapers, recentFailures: d.recentFailures },
+      health: {
+        tableCounts: d.tableCounts,
+        processUptimeSec: Math.round(process.uptime()),
+      },
+    });
+  } catch (err) {
+    console.error('[api] admin/analytics error:', err);
+    res.status(500).json({ error: 'analytics_failed' });
   }
 });
 

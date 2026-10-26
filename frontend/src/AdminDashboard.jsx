@@ -1,10 +1,13 @@
 // AdminDashboard.jsx — admin-only listings/users/scraper dashboard, split
 // out of norcal_thrifting.jsx and lazy-loaded (only admins ever open it).
-import { useState, useEffect, useCallback } from 'react';
-import { Shield, X, List, Users, RefreshCw, Loader2, MessageSquarePlus, Check, Lock, Mail } from 'lucide-react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { Shield, X, List, Users, RefreshCw, Loader2, MessageSquarePlus, Check, Lock, Mail, BarChart3 } from 'lucide-react';
 import { API_URL } from './shared.js';
 import ApproveSuggestionModal from './ApproveSuggestionModal.jsx';
 import TwoFactorSettings from './TwoFactorSettings.jsx';
+
+// Lazy so recharts only downloads when the Analytics tab is actually opened.
+const AdminAnalytics = lazy(() => import('./AdminAnalytics.jsx'));
 
 export default function AdminDashboard({ user, onClose }) {
   const [tab, setTab]               = useState('listings');
@@ -149,6 +152,7 @@ export default function AdminDashboard({ user, onClose }) {
 
   const TABS = [
     { key: 'listings',    label: 'Listings', icon: <List size={14} /> },
+    { key: 'analytics',   label: 'Analytics', icon: <BarChart3 size={14} /> },
     { key: 'users',       label: 'Users',    icon: <Users size={14} /> },
     { key: 'suggestions', label: stats?.pendingSuggestions ? `Store Suggestions (${stats.pendingSuggestions})` : 'Store Suggestions', icon: <MessageSquarePlus size={14} /> },
     { key: 'contact',     label: 'Contact Messages', icon: <Mail size={14} /> },
@@ -199,11 +203,11 @@ export default function AdminDashboard({ user, onClose }) {
         )}
 
         {/* Tabs */}
-        <div style={{ display: 'flex', marginBottom: '20px', borderBottom: '1px solid #E8DCC8' }}>
+        <div style={{ display: 'flex', marginBottom: '20px', borderBottom: '1px solid #E8DCC8', overflowX: 'auto' }}>
           {TABS.map(({ key, label, icon }) => (
             <button key={key} onClick={() => setTab(key)} style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '10px 20px', border: 'none', background: 'none',
+              display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', flexShrink: 0,
+              padding: '10px 16px', border: 'none', background: 'none',
               fontFamily: 'inherit', fontSize: '14px', fontWeight: 700, cursor: 'pointer',
               color: tab === key ? '#A8542C' : '#9A8472',
               borderBottom: tab === key ? '2px solid #A8542C' : '2px solid transparent',
@@ -458,6 +462,13 @@ export default function AdminDashboard({ user, onClose }) {
               </p>
             )}
           </div>
+        )}
+
+        {/* ── Analytics tab ── */}
+        {tab === 'analytics' && (
+          <Suspense fallback={<div style={{ textAlign: 'center', padding: '40px', color: '#9A8472' }}><Loader2 size={24} className="spin" /></div>}>
+            <AdminAnalytics />
+          </Suspense>
         )}
 
         {/* ── Security tab ── */}
