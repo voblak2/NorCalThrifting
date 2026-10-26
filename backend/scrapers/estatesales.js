@@ -5,7 +5,9 @@
 // detail pages — so plain HTTP + cheerio is sufficient; no headless browser needed.
 //
 // Two-pass approach:
-//   1. Fetch each city's listing page → collect individual sale URLs.
+//   1. Collect sale URLs — primarily from the site's own sale-search JSON
+//      endpoint (see ESTATESALES_SEARCHES), falling back to the city listing
+//      pages if that returns nothing.
 //   2. For each URL, fetch the detail page → parse the JSON-LD SaleEvent block
 //      which contains structured title, address, start/end datetimes, and description.
 //
@@ -53,18 +55,47 @@ export const ESTATESALES_CITIES = [
   { state: 'CA', city: 'San Jose',      slug: 'San-Jose' },
 ];
 
+// Radius searches against /api/sale-details — the endpoint the site's own
+// city pages call from the browser. City-page HTML only server-renders the
+// first ~20 sales of a metro (the rest load client-side), and neighboring
+// city pages mostly repeat the same 20, so step 1 used to top out around 30
+// unique NorCal links. The search endpoint returns every sale in the circle.
+// radiusMi is in miles (verified: a 25mi search's farthest result was 24mi).
+// Circles overlap on purpose; results are de-duplicated by sale ID. This is an
+// undocumented internal endpoint, not a public API — if it stops returning
+// results, refreshAll() falls back to the city pages below.
+export const ESTATESALES_SEARCHES = [
+  { name: 'Sacramento',       lat: 38.5816, lng: -121.4944, radiusMi: 75 },
+  { name: 'Bay Area',         lat: 37.8044, lng: -122.2712, radiusMi: 60 },
+  { name: 'Stockton/Modesto', lat: 37.8000, lng: -121.1000, radiusMi: 60 },
+  { name: 'Fresno',           lat: 36.7378, lng: -119.7871, radiusMi: 75 },
+  { name: 'Chico/Redding',    lat: 40.1000, lng: -122.1000, radiusMi: 100 },
+];
+
+// EstateSales.net sale `type` codes (from the city pages' embedded state).
+// Only in-person sales belong on the map; online-only auctions (64) and
+// online estate sales (16384) are dropped.
+const IN_PERSON_SALE_TYPES = new Set([
+  1,  // EstateSales
+  4,  // MovingSales
+  16, // MovedOffsiteToWarehouse — an in-person sale held at the company's warehouse
+]);
+
 export async function refreshAll() {
-  // Collect all unique sale URLs across all cities first (avoids duplicate fetches)
-  const seen = new Set();
-  for (const { state, slug } of ESTATESALES_CITIES) {
-    const urls = await getSaleUrls(state, slug);
-    for (const u of urls) seen.add(u);
-    await sleep(1500);
+  let urls = await getSaleUrlsFromSearch();
+  if (urls.length === 0) {
+    console.warn('[estatesales] search endpoint returned no sales — falling back to city pages');
+    const seen = new Set();
+    for (const { state, slug } of ESTATESALES_CITIES) {
+      for (const u of await getSaleUrls(state, slug)) seen.add(u);
+      await sleep(1500);
+    }
+    urls = [...seen];
   }
 
   let total = 0, totalErrors = 0;
 
-  for (const saleUrl of seen) {
+  for (const saleUrl of urls) {
     await sleep(1200 + Math.random() * 800); // 1.2–2s between detail pages
     const result = await processSale(saleUrl);
     if (result === 'inserted') total++;
@@ -87,7 +118,39 @@ export async function refreshCity({ state, city, slug }) {
   return { inserted, errors };
 }
 
-// ---------- Step 1: collect sale URLs from a city listing page ----------
+// ---------- Step 1: collect sale URLs ----------
+
+async function getSaleUrlsFromSearch() {
+  const byId = new Map();
+  let dropped = 0;
+  for (const { name, lat, lng, radiusMi } of ESTATESALES_SEARCHES) {
+    const url = `${BASE}/api/sale-details?bypass=bycoordinatesanddistance:${lat}_${lng}_${radiusMi}`
+      + `&select=id,stateCode,cityName,postalCodeNumber,type&explicitTypes=DateTime`;
+    try {
+      const { data } = await axios.get(url, { headers: { ...HEADERS, Accept: 'application/json' }, timeout: 20000 });
+      if (!Array.isArray(data)) throw new Error('unexpected response shape');
+      let kept = 0;
+      for (const s of data) {
+        const zip = String(s.postalCodeNumber || '');
+        if (s.stateCode !== 'CA' || !/^\d{5}$/.test(zip) || !isNorCalZip(zip) || !IN_PERSON_SALE_TYPES.has(s.type)) {
+          dropped++;
+          continue;
+        }
+        const citySlug = String(s.cityName || 'CA').trim().replace(/\s+/g, '-');
+        byId.set(s.id, `/CA/${citySlug}/${zip}/${s.id}`); // wrong city slug just 301s to the canonical URL
+        kept++;
+      }
+      console.log(`[estatesales] search ${name} (${radiusMi}mi): ${data.length} sales, ${kept} in-person NorCal`);
+    } catch (err) {
+      console.error(`[estatesales] search ${name} failed —`, err.message);
+    }
+    await sleep(1500);
+  }
+  console.log(`[estatesales] search: ${byId.size} unique sales (${dropped} online-only/out-of-area results skipped)`);
+  return [...byId.values()];
+}
+
+// Fallback only: a city listing page's server-rendered links.
 
 async function getSaleUrls(state, slug) {
   const url = `${BASE}/${state}/${slug}`;
