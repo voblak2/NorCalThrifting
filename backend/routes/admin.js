@@ -67,6 +67,9 @@ router.get('/stats', requireAdmin, async (req, res) => {
 const DAY_MS = 24 * 3600_000;
 // SQLite datetime('now') strings are UTC with no zone marker.
 const parseDbTime = s => new Date(s.replace(' ', 'T') + 'Z').getTime();
+// Scraped city values arrive as "sacramento", "SACRAMENTO" or "Sacramento".
+// CSS capitalize can't fix the all-caps form, so normalize here.
+const titleCase = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 
 // Buckets timestamps into `weeks` rolling 7-day windows ending now, oldest
 // first, each labeled by its start date (YYYY-MM-DD, UTC).
@@ -123,7 +126,7 @@ router.get('/analytics', requireAdmin, async (req, res) => {
         byType:   d.byType,
         perDay:   listingsPerDay,
       },
-      geography: { byState: d.byState, topCities: d.topCities },
+      geography: { byState: d.byState, topCities: d.topCities.map(c => ({ ...c, city: titleCase(c.city) })) },
       users: {
         total:      d.userTotals.total ?? 0,
         googleOnly: d.userTotals.google_only ?? 0,

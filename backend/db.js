@@ -776,7 +776,7 @@ export async function getAnalyticsData() {
        WHERE created_at >= date('now', '-29 days') GROUP BY day`,
     `SELECT state, COUNT(*) as n FROM sales GROUP BY state ORDER BY n DESC`,
     // Some scraped rows differ only by casing ("CHICO" vs "Chico") — group
-    // case-insensitively; MAX() picks the mixed-case spelling as the label.
+    // case-insensitively; routes/admin.js title-cases the label.
     `SELECT MAX(TRIM(city)) as city, state, COUNT(*) as n FROM sales
        GROUP BY LOWER(TRIM(city)), state ORDER BY n DESC LIMIT 10`,
     `SELECT COUNT(*) as total,
