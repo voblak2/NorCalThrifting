@@ -25,35 +25,16 @@ import { geocode, geocodeApprox } from '../geocode.js';
 import { HEADERS } from './shared.js';
 import { sleep } from '../utils.js';
 import { addDays } from '../dateUtils.js';
+import { METROS } from '../config/metros.js';
 
 const BASE = 'https://www.estatesales.net';
 const MAX_PER_CITY = 25;
 
-// NorCal / Central Valley CA cities.
-// slug = EstateSales URL path segment (hyphens for spaces).
-//
-// Bay Area note (verified directly, 2026-08-08): EstateSales.net groups
-// nearby cities under shared metro pages rather than giving every city its
-// own slug. A bare 'Oakland' slug 301-redirects to 'Oakland-Hayward-Fremont'
-// (used directly below to skip the extra hop), and 'Berkeley' redirects to
-// 'San-Francisco' — there's no separate Berkeley page, so Berkeley is
-// already covered by the San Francisco entry and doesn't get its own row
-// here (a literal 'Berkeley' entry would just re-fetch the same San-Francisco
-// URL a second time).
-export const ESTATESALES_CITIES = [
-  { state: 'CA', city: 'Sacramento',  slug: 'Sacramento' },
-  { state: 'CA', city: 'Stockton',    slug: 'Stockton' },
-  { state: 'CA', city: 'Fresno',      slug: 'Fresno' },
-  { state: 'CA', city: 'Modesto',     slug: 'Modesto' },
-  { state: 'CA', city: 'Chico',       slug: 'Chico' },
-  { state: 'CA', city: 'Redding',     slug: 'Redding' },
-  { state: 'CA', city: 'Bakersfield', slug: 'Bakersfield' },
-  { state: 'CA', city: 'Roseville',   slug: 'Roseville' },
-  { state: 'CA', city: 'Elk Grove',   slug: 'Elk-Grove' },
-  { state: 'CA', city: 'San Francisco', slug: 'San-Francisco' },
-  { state: 'CA', city: 'Oakland',       slug: 'Oakland-Hayward-Fremont' },
-  { state: 'CA', city: 'San Jose',      slug: 'San-Jose' },
-];
+// City pages for the fallback path. slug = EstateSales URL path segment;
+// covered cities come from config/metros.js (see the Bay Area note there).
+export const ESTATESALES_CITIES = METROS
+  .filter(m => m.estatesales)
+  .map(m => ({ state: m.state, city: m.name, slug: m.estatesales }));
 
 // Radius searches against /api/sale-details — the endpoint the site's own
 // city pages call from the browser. City-page HTML only server-renders the

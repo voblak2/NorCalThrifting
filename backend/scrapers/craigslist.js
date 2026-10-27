@@ -26,6 +26,7 @@ import { parsePost } from '../parser.js';
 import { geocode, geocodeApprox } from '../geocode.js';
 import { HEADERS as BASE_HEADERS } from './shared.js';
 import { sleep } from '../utils.js';
+import { METROS } from '../config/metros.js';
 
 // Craigslist-specific headers on top of the common browser-impersonation base.
 const HEADERS = {
@@ -37,29 +38,10 @@ const HEADERS = {
   'Cache-Control': 'max-age=0',
 };
 
-// NorCal / Central Valley subdomains only.
-//
-// 'sfbay' is a single entry, not one per Bay Area city: Craigslist runs the
-// whole San Francisco Bay Area (SF, Oakland, Berkeley, San Jose, the
-// Peninsula, etc.) as one combined site — oakland.craigslist.org,
-// berkeley.craigslist.org, and sanjose.craigslist.org don't resolve at all,
-// and sanfrancisco.craigslist.org just redirects to the same sfbay area
-// (verified directly, 2026-08-08). Exactly like the 'sacramento' entry
-// already picks up Roseville/Folsom/Carmichael/etc. through each listing's
-// own location text without a separate entry per suburb, one 'sfbay' entry
-// covers Oakland/Berkeley/San Jose/San Francisco the same way.
-export const CRAIGSLIST_CITIES = [
-  { sub: 'sacramento',  city: 'Sacramento',  state: 'CA' },
-  { sub: 'stockton',    city: 'Stockton',    state: 'CA' },
-  { sub: 'modesto',     city: 'Modesto',     state: 'CA' },
-  { sub: 'fresno',      city: 'Fresno',      state: 'CA' },
-  { sub: 'chico',       city: 'Chico',       state: 'CA' },
-  { sub: 'redding',     city: 'Redding',     state: 'CA' },
-  { sub: 'bakersfield', city: 'Bakersfield', state: 'CA' },
-  { sub: 'merced',      city: 'Merced',      state: 'CA' },
-  { sub: 'visalia',     city: 'Visalia',     state: 'CA' },
-  { sub: 'sfbay',       city: 'San Francisco', state: 'CA' },
-];
+// Covered subdomains come from config/metros.js (see the 'sfbay' note there).
+export const CRAIGSLIST_CITIES = METROS
+  .filter(m => m.craigslist)
+  .map(m => ({ sub: m.craigslist, city: m.name, state: m.state }));
 
 export async function refreshCity({ sub, city, state }) {
   const url = `https://${sub}.craigslist.org/search/gms`;
