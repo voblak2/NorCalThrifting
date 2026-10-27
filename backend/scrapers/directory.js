@@ -190,7 +190,9 @@ async function fetchElements(lat, lon, attempts = 3, delayMs = 15000) {
       return data.elements || [];
     } catch (err) {
       const status = err.response?.status;
-      const retryable = status === 429 || status === 504 || !status;
+      // 502/503 are the same transient overload as 504 — Overpass returns
+      // them under load, and without a retry they drop the whole city.
+      const retryable = status === 429 || status === 502 || status === 503 || status === 504 || !status;
       if (!retryable || i === attempts) throw err;
       console.warn(`[directory] fetch failed (attempt ${i}/${attempts}, status ${status}): ${err.message}. Retrying in ${delayMs}ms...`);
       await sleep(delayMs);
