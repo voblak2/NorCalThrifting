@@ -17,7 +17,6 @@ const STORES = [
   { name: 'Goodwill',        address: '9699 E Stockton Blvd',    city: 'Elk Grove',     state: 'CA', zip: '95624' },
   { name: 'Goodwill',        address: '9400 Fairway Dr',         city: 'Roseville',     state: 'CA', zip: '95678' },
   { name: 'Goodwill',        address: '390 Plaza Dr',            city: 'Folsom',        state: 'CA', zip: '95630' },
-  { name: 'Goodwill',        address: '7120 Auburn Blvd',        city: 'Citrus Heights',state: 'CA', zip: '95610' },
   { name: 'Goodwill',        address: '2460 Grass Valley Hwy',   city: 'Auburn',        state: 'CA', zip: '95603' },
   { name: 'Goodwill',        address: '765 East Ave',            city: 'Chico',         state: 'CA', zip: '95926' },
   { name: 'Goodwill',        address: '1643 Hilltop Dr',         city: 'Redding',       state: 'CA', zip: '96002' },
